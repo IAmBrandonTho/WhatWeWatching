@@ -720,6 +720,7 @@ select option:hover{
       <div class="playerShell" id="playerShell">
       <div class="stage" id="stage">
         <video id="video" playsinline></video>
+        <audio id="audioEl" preload="auto" style="display:none"></audio>
         <div class="subsOverlay" id="subsOverlay" aria-hidden="true"></div>
 
         <div class="videoMsgOverlay on" id="videoMsgOverlay" aria-hidden="true">
@@ -1001,6 +1002,7 @@ select option:hover{
         <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px">
           <div class="row" style="gap:10px; flex-wrap:wrap">
             <button id="btnLoad" class="hostOnly">Load video</button>
+            <button id="btnLoadAudio" class="hostOnly">Load audio</button>
             <button id="btnSnapshot">Snapshot</button>
             <button id="btnStats">Stats</button>
           </div>
@@ -1028,6 +1030,16 @@ select option:hover{
           <div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
             <label>Video Messages</label>
             <label class="chk"><input id="videoMsgsToggle" type="checkbox" checked /> <span>Show chat messages on video</span></label>
+          </div>
+
+          <div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
+            <label>Audio Source</label>
+            <div class="row" style="gap:10px; flex-wrap:wrap; align-items:center">
+              <select id="audioSourceSelect" style="min-width:240px; flex:1 1 240px;">
+                <option value="video">Video</option>
+                <option value="external">Loaded audio</option>
+              </select>
+            </div>
           </div>
 
 
@@ -1113,6 +1125,7 @@ select option:hover{
 <div class="toast" id="toast"></div>
 
 <input id="filePick" type="file" accept="video/*" hidden />
+<input id="audioPick" type="file" accept="audio/*" hidden />
 <input id="vttPick" type="file" accept="text/vtt,.vtt,.srt,text/srt,application/x-subrip" hidden />
 
 <script>
@@ -1449,6 +1462,7 @@ select option:hover{
   const uiScale = $("#uiScale");
   const uiScaleLabel = $("#uiScaleLabel");
   const videoMsgsToggle = $("#videoMsgsToggle");
+  const audioSourceSelect = $("#audioSourceSelect");
 
   function applyUiScale(pct, doSave=true){
     const v = Math.max(70, Math.min(160, Number(pct)||100));
@@ -1460,6 +1474,17 @@ select option:hover{
   on(uiScale,'change', ()=> applyUiScale(uiScale.value, true));
 
   on(videoMsgsToggle,'change', ()=> setVideoMessagesEnabled(!!videoMsgsToggle.checked, true));
+  on(audioSourceSelect,'change', ()=>{
+    const next = audioSourceSelect?.value === 'external' ? 'external' : 'video';
+    audioMode = next;
+    applyDesiredAudioState();
+    applyAudioRouting();
+    if(mode === 'host'){
+      updateOutgoingStreamAndPeers();
+      broadcastCtrl({type:'audioSrc', mode: audioMode});
+    }
+  });
+
 
 
   const seek = $("#seek");
@@ -1625,6 +1650,10 @@ select option:hover{
   }
 
   const btnLoad = $("#btnLoad");
+  const btnLoadAudio = $("#btnLoadAudio");
+  const audioPick = $("#audioPick");
+  const audioEl = $("#audioEl");
+
   const btnLoadVtt = $("#btnLoadVtt");
   const btnToggleSubs = $("#btnToggleSubs");
   const subsTrackSel = $("#subsTrackSel");
@@ -1660,7 +1689,15 @@ select option:hover{
 
   let mode = null; // 'host' | 'viewer'
   let localStream = null; // host video+audio
-  let remoteStream = new MediaStream(); // viewer receives into this
+  
+  let videoStream = null; // captureStream() from <video>
+  let externalAudioStream = null; // captureStream() from <audio>
+  let outgoingStream = null; // composed stream sent to peers
+  let audioMode = "video"; // "video" | "external"
+  // Desired output volume/mute (applied to either video or external audio)
+  let desiredVolume = 0.8;
+  let desiredMuted = false;
+let remoteStream = new MediaStream(); // viewer receives into this
 
   const subsBank = []; // {id, name, vtt, source:'host'|'local'|'remote'}
   let activeSubsId = null;
@@ -1739,9 +1776,13 @@ select option:hover{
     syncThemePickerUI();
 
     vol.value = (p.vol ?? 1);
-    video.volume = Number(vol.value);
+    desiredVolume = Number(vol.value);
+    video.volume = desiredVolume;
 
-    const prefRate = (p.rate ?? 1);
+    desiredMuted = !!p.muted;
+    video.muted = desiredMuted;
+    applyDesiredAudioState();
+const prefRate = (p.rate ?? 1);
     video.playbackRate = Number(prefRate);
     setRateLabel();
 
@@ -1759,6 +1800,7 @@ select option:hover{
       theme: themeSel.value,
 
       vol: Number(vol.value),
+      muted: !!desiredMuted,
       rate: Number(video.playbackRate || 1),
       uiScalePct: Number(uiScale?.value || 100),
       subsEnabled: !!subsEnabled,
@@ -1811,8 +1853,10 @@ select option:hover{
   });
 
   vol.addEventListener('input', () => {
-    video.volume = Number(vol.value);
-    video.muted = false;
+    desiredVolume = Number(vol.value);
+    // Sliding volume implies unmute (matching prior behavior)
+    desiredMuted = false;
+    applyDesiredAudioState();
     paintRange(vol);
     syncMuteIcon();
     savePrefs();
@@ -1903,8 +1947,8 @@ select option:hover{
 
   function syncMuteIcon(){
   if(!btnMute) return;
-  const muted = video.muted || Number(video.volume) === 0;
-  btnMute.classList.toggle('muted', muted);
+  const muted = !!desiredMuted || Number(desiredVolume) === 0;
+btnMute.classList.toggle('muted', muted);
   btnMute.classList.toggle('isOn', muted);
   btnMute.title = muted ? 'Unmute (M)' : 'Mute (M)';
   btnMute.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
@@ -1912,15 +1956,12 @@ select option:hover{
 
   if(btnMute){
     btnMute.addEventListener('click', () => {
-      // If volume is 0, unmute to a sane level
-      if(video.muted){
-        video.muted = false;
-        if(Number(video.volume) === 0) video.volume = 0.8;
-      }else{
-        video.muted = true;
-      }
-      if(mode === 'host') broadcastCtrl({type:'mute', muted: video.muted, vol: video.volume});
-      vol.value = String(video.volume);
+      // Toggle desired mute; do not force source-specific side effects
+      desiredMuted = !desiredMuted;
+      if(!desiredMuted && Number(desiredVolume) === 0) desiredVolume = 0.8;
+      applyDesiredAudioState();
+      if(mode === 'host') broadcastCtrl({type:'mute', muted: desiredMuted, vol: desiredVolume});
+      vol.value = String(desiredVolume);
       paintRange(vol);
       syncMuteIcon();
       savePrefs();
@@ -2071,6 +2112,8 @@ select option:hover{
 
   on(dropHint,'click', ()=>{ if(mode === 'host') filePick?.click(); });
   on(btnLoad,'click', ()=>{ if(mode === 'host') filePick?.click(); else toast('Only host can load the video'); });
+  on(btnLoadAudio,'click', ()=>{ if(mode === 'host') audioPick?.click(); else toast('Only host can load audio'); });
+
   // Double-click the player to toggle fullscreen
   on(stage,'dblclick', (e)=>{
     if(e.button !== 0) return;
@@ -2082,6 +2125,43 @@ select option:hover{
     if(mode !== 'host') return toast('Only host can load video');
     await loadVideoFile(f);
   });
+
+on(audioPick,'change', async () => {
+  const f = audioPick.files?.[0];
+  if(!f) return;
+  if(mode !== 'host') return toast('Only host can load audio');
+  if(!audioEl){
+    addLog('Audio element missing.', 'err');
+    return;
+  }
+  const url = URL.createObjectURL(f);
+  audioEl.src = url;
+  try{ audioEl.load(); }catch{}
+  // Try to start aligned with the video
+  try{ audioEl.currentTime = video.currentTime || 0; }catch{}
+  try{ audioEl.playbackRate = video.playbackRate || 1; }catch{}
+  try{ audioEl.volume = video.volume; }catch{}
+  try{ audioEl.muted = video.muted; }catch{}
+  // capture audio stream for WebRTC
+  if(audioEl.captureStream){
+    externalAudioStream = audioEl.captureStream();
+  }else{
+    addLog('Your browser does not support audio.captureStream(); external audio will be local-only.', 'warn');
+    externalAudioStream = null;
+  }
+  toast('Audio loaded');
+  addLog(`Loaded audio: ${f.name}`, 'sys');
+
+  // Switch to external audio automatically
+  if(audioSourceSelect){
+    audioSourceSelect.value = 'external';
+  }
+  audioMode = 'external';
+  applyAudioRouting();
+  updateOutgoingStreamAndPeers();
+  if(mode === 'host') broadcastCtrl({type:'audioSrc', mode: audioMode});
+});
+
 
   async function loadVideoFile(file){
     try{
@@ -2099,11 +2179,9 @@ select option:hover{
         return;
       }
 
-      localStream = video.captureStream();
-
-      for(const {pc} of peers.values()){
-        replaceTracks(pc);
-      }
+      videoStream = video.captureStream();
+      updateOutgoingStreamAndPeers();
+      applyAudioRouting();
 
       const base = file.name.replace(/\.[^.]+$/, '');
       const guess = base + '.vtt';
@@ -2816,6 +2894,13 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
   });
   video.addEventListener('play', ()=>{ if(mode==='host') broadcastCtrl({type:'play'}); });
   video.addEventListener('pause', ()=>{ if(mode==='host') broadcastCtrl({type:'pause'}); });
+  // Keep external audio in sync with video
+  video.addEventListener('play', ()=>{ if(audioMode==='external') applyAudioRouting(); });
+  video.addEventListener('pause', ()=>{ if(audioMode==='external'){ try{ audioEl.pause(); }catch{} } });
+  video.addEventListener('seeking', ()=>{ if(audioMode==='external' && audioEl && audioEl.src){ try{ audioEl.currentTime = video.currentTime || 0; }catch{} } });
+  video.addEventListener('ratechange', ()=>{ if(audioMode==='external' && audioEl && audioEl.src){ try{ audioEl.playbackRate = video.playbackRate || 1; }catch{} } });
+  video.addEventListener('volumechange', ()=>{ if(audioEl){ try{ audioEl.volume = video.volume; audioEl.muted = video.muted; }catch{} } });
+
 
   // -----------------------------
   // Fullscreen / PiP
@@ -3105,6 +3190,24 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
       setPlaybackRate(payload.rate ?? 1);
     }
     if(payload.type === 'subs') setSubsEnabled(!!payload.enabled);
+    if(payload.type === 'audioSrc'){
+      const m = (payload.mode === 'external') ? 'external' : 'video';
+      audioMode = m;
+      if(audioSourceSelect) audioSourceSelect.value = m;
+      applyDesiredAudioState();
+      applyAudioRouting();
+    }
+
+    if(payload.type === 'mute'){
+      desiredMuted = !!payload.muted;
+      if(Number.isFinite(Number(payload.vol))) desiredVolume = Number(payload.vol);
+      // Keep UI slider aligned
+      if(vol) vol.value = String(desiredVolume);
+      paintRange(vol);
+      applyDesiredAudioState();
+      syncMuteIcon();
+    }
+
     if(payload.type === 'room'){
       currentRoomName = clampStr(payload.name, 30) || 'Player';
       // Keep viewer UI in sync
@@ -3120,7 +3223,76 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
     }
   }
 
-  function replaceTracks(pc){
+  
+function buildOutgoingStream(){
+  if(!videoStream) return null;
+  const s = new MediaStream();
+  const v = videoStream.getVideoTracks?.()[0];
+  if(v) s.addTrack(v);
+  let a = null;
+  if(audioMode === 'external' && externalAudioStream){
+    a = externalAudioStream.getAudioTracks?.()[0] || null;
+  }
+  if(!a){
+    a = videoStream.getAudioTracks?.()[0] || null;
+  }
+  if(a) s.addTrack(a);
+  return s;
+}
+
+function applyDesiredAudioState(){
+  // Apply desired volume/mute to the currently audible element
+  try{ video.volume = desiredVolume; }catch{}
+  try{ audioEl.volume = desiredVolume; }catch{}
+  const useExternal = (audioMode === 'external' && audioEl && audioEl.src);
+  if(useExternal){
+    // video is forced muted to prevent double playback
+    try{ video.muted = true; }catch{}
+    try{ audioEl.muted = !!desiredMuted || Number(desiredVolume) === 0; }catch{}
+  }else{
+    try{ audioEl.muted = true; }catch{}
+    try{ video.muted = !!desiredMuted || Number(desiredVolume) === 0; }catch{}
+  }
+}
+
+function applyAudioRouting(){
+  const useExternal = (audioMode === 'external' && audioEl && audioEl.src);
+  if(useExternal){
+    // Prevent double playback: video output muted, external audio is the only audible source
+    try{ video.muted = true; }catch{}
+    try{ audioEl.muted = !!desiredMuted || Number(desiredVolume) === 0; }catch{}
+    try{ video.volume = desiredVolume; }catch{}
+    try{ audioEl.volume = desiredVolume; }catch{}
+    try{ audioEl.playbackRate = video.playbackRate || 1; }catch{}
+    // Align time; avoid fighting the user while scrubbing by only nudging when drift is noticeable
+    try{
+      const vt = Number(video.currentTime||0);
+      if(Number.isFinite(vt)){
+        const at = Number(audioEl.currentTime||0);
+        if(!Number.isFinite(at) || Math.abs(at - vt) > 0.15) audioEl.currentTime = vt;
+      }
+    }catch{}
+    if(!video.paused){ audioEl.play().catch(()=>{}); }
+    else{ try{ audioEl.pause(); }catch{} }
+  }else{
+    // Video audio is the only audible source
+    try{ audioEl.pause(); }catch{}
+    try{ audioEl.muted = true; }catch{}
+    try{ audioEl.volume = desiredVolume; }catch{}
+    try{ video.volume = desiredVolume; }catch{}
+    try{ video.muted = !!desiredMuted || Number(desiredVolume) === 0; }catch{}
+  }
+}
+
+function updateOutgoingStreamAndPeers(){
+  outgoingStream = buildOutgoingStream();
+  localStream = outgoingStream; // keep existing code working
+  for(const {pc} of peers.values()){
+    replaceTracks(pc);
+  }
+}
+
+function replaceTracks(pc){
     if(!localStream) return;
     const senders = pc.getSenders();
     for(const track of localStream.getTracks()){
