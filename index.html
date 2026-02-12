@@ -1749,7 +1749,8 @@ let remoteStream = new MediaStream(); // viewer receives into this
   }
 
   // Default: same host as the page (ws/wss). Override with ?ws=wss://...
-  const DEFAULT_SIGNAL_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+    // Default: same domain as the page, but on /ws (so a Worker route like example.com/ws* can handle signaling)
+  const DEFAULT_SIGNAL_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const SIGNAL_URL = parseWsFromUrl() || DEFAULT_SIGNAL_URL;
 
   let ws = null;
