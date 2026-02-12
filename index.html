@@ -1749,8 +1749,15 @@ let remoteStream = new MediaStream(); // viewer receives into this
   }
 
   // Default: same host as the page (ws/wss). Override with ?ws=wss://...
-  const DEFAULT_SIGNAL_URL = 'wss://whatwewatching-signal.librandon2008.workers.dev/?room=' + encodeURIComponent(roomId);
+  const DEFAULT_SIGNAL_URL = 'wss://whatwewatching-signal.librandon2008.workers.dev';
   const SIGNAL_URL = parseWsFromUrl() || DEFAULT_SIGNAL_URL;
+
+  function buildSignalWsUrl(base, roomId){
+    const u = new URL(base.replace(/^ws/i,'http'));
+    // If caller already provided a room in the URL, keep it
+    if(!u.searchParams.get('room')) u.searchParams.set('room', roomId);
+    return u.toString().replace(/^http/i,'ws');
+  }
 
   let ws = null;
   let wsReady = false;
@@ -1782,7 +1789,7 @@ let remoteStream = new MediaStream(); // viewer receives into this
 
     // Reset previous connection
     try{ ws?.close?.(); }catch{}
-    ws = new WebSocket(SIGNAL_URL.replace(/^http/i,'ws'));
+    ws = new WebSocket(buildSignalWsUrl(SIGNAL_URL, sessionRoomId));
     wsReady = false;
 
     ws.addEventListener('open', ()=>{
