@@ -531,6 +531,12 @@ select option:hover{
 
 
   
+/* Host-only UI blocks */
+    .hostOnly{display:none;}
+    body.isHost .hostOnly{display:grid;}
+    .hostOnly.inline{display:none;}
+    body.isHost .hostOnly.inline{display:inline-flex;}
+
     /* Host-only UI blocks */
     .hostOnly{display:none;}
     body.isHost .hostOnly{display:grid;}
@@ -724,7 +730,8 @@ header .mini{
       <div class="row" style="gap:10px">
         <button class="small" id="btnHost">Host</button>
         <button class="small" id="btnViewer">Viewer</button>
-        <button class="small danger" id="btnDisconnect" title="Disconnect from room">Disconnect</button>
+                <button class="small hostOnly inline" id="btnShare">Share link</button>
+<button class="small danger" id="btnDisconnect" title="Disconnect from room">Disconnect</button>
         <div class="pill" id="statusPill">
           <span class="badge">
             <span class="dot" id="netDot"></span>
@@ -1094,74 +1101,15 @@ header .mini{
       </details>
 
       <div class="hr"></div>
-
-      <!-- Signaling (bottom, collapsible) -->
       <details>
-        <summary style="cursor:pointer; color: var(--muted);">Signaling (?)</summary>
+        <summary style="cursor:pointer; color: var(--muted);">Connection</summary>
         <div class="hint" style="margin-top:10px">
-          This page is self-contained, so it uses manual copy/paste to exchange WebRTC offers/answers.
-          For a 1-click room link, add a tiny WebSocket signaling server (see next section).
-        </div>
-
-        <div class="kv" style="margin-top:10px">
-          <label>Host → Viewer</label>
-          <div class="row" style="gap:8px">
-            <button id="btnMakeOffer" class="primary">Create Offer</button>
-            <button id="btnCopyOffer" class="small">Copy</button>
-          </div>
-        </div>
-        <textarea id="offerBox" placeholder="(Host) Offer appears here. Send it to your friend."></textarea>
-
-        <div class="kv">
-          <label>Viewer → Host</label>
-          <div class="row" style="gap:8px">
-            <button id="btnMakeAnswer" class="primary">Create Answer</button>
-            <button id="btnApplyAnswer" class="ok">Apply Answer</button>
-            <button id="btnCopyAnswer" class="small">Copy</button>
-          </div>
-        </div>
-        <textarea id="answerBox" placeholder="(Viewer) Paste offer here, click Create Answer. Then send answer back."></textarea>
-
-        <div class="kv">
-          <label>Host applies</label>
-          <button id="btnApplyViewerAnswer" class="ok">Apply Viewer Answer</button>
+          This build uses a tiny WebSocket signaling server so the Host can share a single link that Viewers can click to auto-join.
+          Configure the server in <span class="kbd">SIGNAL_URL</span> inside the script (or pass <span class="kbd">?ws=wss://your-domain</span>).
         </div>
       </details>
 
       <div class="hr"></div>
-
-      <details>
-        <summary style="cursor:pointer; color: var(--muted);">How to use (and how to make it 1-click)</summary>
-        <div class="hint" style="margin-top:10px">
-          <b>Host flow</b>
-          <ol>
-            <li>Click <b>Host</b>, then drop a video file onto the player.</li>
-            <li>(Optional) Load subtitles: drop a <span class="kbd">.vtt</span> or <span class="kbd">.srt</span> subtitles file or click <b>Load Subs</b>.</li>
-            <li>Open <b>Signaling (?)</b> → click <b>Create Offer</b>, copy the offer and send it to your friend.</li>
-            <li>Your friend pastes offer, clicks <b>Create Answer</b>, then sends the answer back.</li>
-            <li>Paste their answer into the <b>Viewer → Host</b> box and click <b>Apply Viewer Answer</b>.</li>
-            <li>Repeat for each friend (each viewer generates an answer; host applies each one).</li>
-          </ol>
-          <b>Viewer flow</b>
-          <ol>
-            <li>Click <b>Viewer</b>.</li>
-            <li>Open <b>Signaling (?)</b>, paste host offer into the <b>Viewer → Host</b> box and click <b>Create Answer</b>.</li>
-            <li>Copy the answer and send it back to the host.</li>
-          </ol>
-
-          <b>Important notes</b>
-          <ul>
-            <li>This uses WebRTC with a public STUN server for NAT traversal. Some networks still block P2P.</li>
-            <li>You must open this page over <b>HTTPS</b> (or localhost) for best results.</li>
-            <li>Host uploads (streams) once per viewer (so your upload bandwidth matters).</li>
-          </ul>
-
-          <b>Make it 1-click</b>
-          <div>
-            Add a tiny signaling server (WebSocket) and replace the manual boxes with room codes. Ask me and I’ll provide a minimal Node.js server + client patch.
-          </div>
-        </div>
-      </details>
     </div>
   </aside>
 </main>
@@ -1553,16 +1501,6 @@ window.addEventListener('DOMContentLoaded', () => {
   // NOTE: HTML id is "btnPiP" (capital i + P). Keep selector exact to avoid null + crashing init.
   const btnPip = $("#btnPiP");
 
-  const btnMakeOffer = $("#btnMakeOffer");
-  const btnCopyOffer = $("#btnCopyOffer");
-  const offerBox = $("#offerBox");
-
-  const btnMakeAnswer = $("#btnMakeAnswer");
-  const btnApplyAnswer = $("#btnApplyAnswer");
-  const btnCopyAnswer = $("#btnCopyAnswer");
-  const answerBox = $("#answerBox");
-  const btnApplyViewerAnswer = $("#btnApplyViewerAnswer");
-
   const displayName = $("#displayName");
   const roomName = $("#roomName");
   const roomNameRow = $("#roomNameRow");
@@ -1721,6 +1659,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const btnStats = $("#btnStats");
   const btnDisconnect = $("#btnDisconnect");
 
+  const btnShare = $("#btnShare");
+  const shareLink = $("#shareLink");
+  const btnCopyLink = $("#btnCopyLink");
+
   const filePick = $("#filePick");
   const vttPick = $("#vttPick");
 
@@ -1768,6 +1710,171 @@ let remoteStream = new MediaStream(); // viewer receives into this
   const peers = new Map(); // peerId => {pc, dc, name, role}
   let authoritativeHostPeerId = null; // viewer: which peer's host controls we accept
   let activePeerId = null; // for generating offer/answer in UI
+
+
+  // -----------------------------
+  // 1-click signaling via WebSocket
+  // -----------------------------
+  const LS_KEY = 'peerwatch_session_v2';
+  const LS_ID_KEY = 'peerwatch_clientId';
+  const getClientId = () => {
+    let id = localStorage.getItem(LS_ID_KEY);
+    if(!id){
+      id = (crypto?.randomUUID?.() || ('c_' + Math.random().toString(16).slice(2) + Date.now().toString(16))).slice(0, 36);
+      localStorage.setItem(LS_ID_KEY, id);
+    }
+    return id;
+  };
+  const clientId = getClientId();
+
+  function parseRoomFromUrl(){
+    const u = new URL(location.href);
+    // Prefer hash: #room=abc (keeps it out of server logs), then ?room=
+    let room = '';
+    if(u.hash && u.hash.includes('room=')){
+      const m = u.hash.match(/room=([^&]+)/);
+      room = m ? decodeURIComponent(m[1]) : '';
+    }
+    if(!room) room = u.searchParams.get('room') || '';
+    room = clampStr(room, 64).replace(/[^a-zA-Z0-9_-]/g,'');
+    return room;
+  }
+  function parseWsFromUrl(){
+    const u = new URL(location.href);
+    const w = u.searchParams.get('ws') || '';
+    return w ? String(w) : '';
+  }
+  function makeRoomId(){
+    return ('r_' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)).slice(0, 16);
+  }
+
+  // Default: same host as the page (ws/wss). Override with ?ws=wss://...
+  const DEFAULT_SIGNAL_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  const SIGNAL_URL = parseWsFromUrl() || DEFAULT_SIGNAL_URL;
+
+  let ws = null;
+  let wsReady = false;
+  let sessionRoomId = '';
+  let hostIdInRoom = null;
+
+  function saveSession(){
+    const payload = {
+      v: 2,
+      at: Date.now(),
+      role: mode || '',
+      roomId: sessionRoomId || '',
+      displayName: clampStr(displayName?.value || '', 30) || ''
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(payload));
+  }
+  function loadSession(){
+    try{ return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); }catch{ return {}; }
+  }
+
+  function wsSend(obj){
+    if(!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify(obj));
+  }
+
+  function connectSignaling(role, roomId){
+    sessionRoomId = roomId || '';
+    if(!sessionRoomId) return;
+
+    // Reset previous connection
+    try{ ws?.close?.(); }catch{}
+    ws = new WebSocket(SIGNAL_URL.replace(/^http/i,'ws'));
+    wsReady = false;
+
+    ws.addEventListener('open', ()=>{
+      wsReady = true;
+      setStatus(true, 'Signaling connected');
+      wsSend({
+        type: 'hello',
+        v: 1,
+        roomId: sessionRoomId,
+        role,
+        clientId,
+        name: clampStr(displayName?.value || '', 30) || (role === 'host' ? 'Host' : 'Viewer')
+      });
+      saveSession();
+      if(role === 'host') updateShareLinkUI();
+    });
+
+    ws.addEventListener('close', ()=>{
+      wsReady = false;
+      setStatus(false, 'Disconnected');
+    });
+
+    ws.addEventListener('message', async (ev)=>{
+      let msg;
+      try{ msg = JSON.parse(ev.data); }catch{ return; }
+
+      if(msg.type === 'welcome'){
+        hostIdInRoom = msg.hostId || hostIdInRoom;
+        if(mode === 'viewer' && hostIdInRoom) authoritativeHostPeerId = hostIdInRoom;
+        addLog(`Joined room ${sessionRoomId}`, 'sys');
+        renderMembersFromSignal(msg);
+        return;
+      }
+
+      if(msg.type === 'peerlist'){
+        renderMembersFromSignal(msg);
+        return;
+      }
+
+      if(msg.type === 'viewer-join' && mode === 'host'){
+        // A viewer wants to connect. Create a dedicated peer connection for them and send offer.
+        const vid = String(msg.viewerId || '');
+        if(!vid) return;
+        await hostCreateOfferForViewer(vid, msg.name || 'Viewer');
+        return;
+      }
+
+      if(msg.type === 'offer' && mode === 'viewer'){
+        await viewerHandleOffer(msg);
+        return;
+      }
+
+      if(msg.type === 'answer' && mode === 'host'){
+        await hostApplyAnswer(msg);
+        return;
+      }
+
+      if(msg.type === 'peer-left'){
+        const pid = String(msg.clientId || '');
+        if(peers.has(pid)){
+          try{ peers.get(pid).pc?.close?.(); }catch{}
+          peers.delete(pid);
+          renderMembers();
+        }
+        return;
+      }
+    });
+  }
+
+  function updateShareLinkUI(){
+    if(!shareLink) return;
+    const u = new URL(location.href);
+    u.searchParams.set('room', sessionRoomId);
+    // carry signaling endpoint only if different from default
+    const wsOverride = parseWsFromUrl() || '';
+    if(wsOverride) u.searchParams.set('ws', wsOverride);
+    u.hash = ''; // keep clean; you can switch to #room= if you prefer
+    shareLink.value = u.toString();
+  }
+
+  function renderMembersFromSignal(msg){
+    // Reuse existing members UI, but keep it simple: host + viewers based on server peer list.
+    if(!membersEl) return;
+    membersEl.innerHTML = '';
+    const arr = Array.isArray(msg.peers) ? msg.peers : [];
+    for(const p of arr){
+      const el = document.createElement('div');
+      el.className = 'member';
+      el.textContent = (p.role === 'host' ? '👑 ' : '') + (p.name || (p.role === 'host' ? 'Host' : 'Viewer'));
+      membersEl.appendChild(el);
+    }
+  }
 
   const RTC_CFG = {
     iceServers: [
@@ -1880,6 +1987,26 @@ const prefRate = (p.rate ?? 1);
     displayName.value = clampStr(displayName.value, 30);
     savePrefs();
     syncRoomName(false);
+
+    // Auto-connect to signaling + remember room
+    const urlRoom = parseRoomFromUrl();
+    const prev = loadSession();
+    if(mode === 'host'){
+      // Prefer existing room to keep the same link across refresh
+      sessionRoomId = sessionRoomId || prev.roomId || makeRoomId();
+      connectSignaling('host', sessionRoomId);
+      updateShareLinkUI();
+    } else {
+      sessionRoomId = urlRoom || sessionRoomId || prev.roomId || '';
+      if(sessionRoomId){
+        connectSignaling('viewer', sessionRoomId);
+      }else{
+        setStatus(false, 'Waiting for room link');
+      }
+    }
+    saveSession();
+
+
     updateSubsUiForRole();
     renderMembers();
   });
@@ -2106,15 +2233,10 @@ btnMute.classList.toggle('muted', muted);
     roleLabel.textContent = mode === 'host' ? '(Host — your controls drive everyone)' : '(Viewer — synced to host)';
     dropHint.innerHTML = mode === 'host'
       ? `Drop a video file here • You are the <b>Host</b>\n<div class="mini" style="margin-top:6px">Tip: Drop a .vtt subtitles file too</div>`
-      : `Waiting for host stream…\n<div class="mini" style="margin-top:6px">Paste host offer on the right to connect</div>`;
-
-    const hostOnly = [btnMakeOffer, btnSync];
-    hostOnly.forEach(b => b.disabled = (mode !== 'host'));
-
-    btnMakeAnswer.disabled = (mode !== 'viewer');
-    btnApplyAnswer.disabled = (mode !== 'viewer');
-
-    btnApplyViewerAnswer.disabled = (mode !== 'host');
+      : `Waiting for host stream…\n<div class="mini" style="margin-top:6px">Open a host link to auto-join</div>`;
+    // Host-only buttons
+    if(btnSync) btnSync.disabled = (mode !== 'host');
+    if(btnShare) btnShare.disabled = (mode !== 'host');
     if(btnLoad){ btnLoad.disabled = (mode !== 'host'); btnLoad.style.display = (mode === 'host') ? '' : 'none'; }
 
     const maybeDisable = [btnPlayPause, btnStepBack, btnStepFwd, btnRewind, btnFwd, seek];
@@ -2233,7 +2355,7 @@ on(audioPick,'change', async () => {
       try{ video.pause(); } catch{}
       showOverlay(false);
       toast('Video loaded');
-      if(mode === 'host') btnMakeOffer.disabled = false;
+      if(mode === 'host' && btnShare) btnShare.disabled = false;
       addLog(`Loaded video: ${file.name}`, 'sys');
 
       if(!video.captureStream){
@@ -3063,8 +3185,8 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
     for(const p of peers.values()) addMember(p.name || 'Viewer');
   }
 
-  function createPeer({asHost}){
-    const peerId = makePeerId();
+  function createPeer({asHost, forcedPeerId=null}){
+    const peerId = forcedPeerId || makePeerId();
     const pc = new RTCPeerConnection(RTC_CFG);
 
     let dc = null;
@@ -3196,7 +3318,34 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
     if(msg.t === MSG.hostTaken){
       if(mode === 'host'){
         toast('Another host is already active — switching you to Viewer');
-        setMode('viewer');
+        const urlRoom = parseRoomFromUrl();
+    const prevSession = loadSession();
+    if(urlRoom){
+      sessionRoomId = urlRoom;
+      const urlRoom = parseRoomFromUrl();
+    const prevSession = loadSession();
+    if(urlRoom){
+      sessionRoomId = urlRoom;
+      setMode('viewer');
+    } else if(prevSession.role === 'host' && prevSession.roomId){
+      sessionRoomId = prevSession.roomId;
+      setMode('host');
+    } else if(prevSession.role === 'viewer' && prevSession.roomId){
+      sessionRoomId = prevSession.roomId;
+      setMode('viewer');
+    } else {
+      setMode('viewer');
+    }
+    } else if(prevSession.role === 'host' && prevSession.roomId){
+      sessionRoomId = prevSession.roomId;
+      setMode('host');
+    } else if(prevSession.role === 'viewer' && prevSession.roomId){
+      sessionRoomId = prevSession.roomId;
+      setMode('viewer');
+    } else {
+      setMode('viewer');
+    }
+
       }
       return;
     }
@@ -3368,116 +3517,130 @@ function replaceTracks(pc){
   // -----------------------------
   // Signaling: manual offer/answer
   // -----------------------------
-  async function createOffer(){
-    try{
-      if(mode !== 'host') return toast('Switch to Host');
-      if(!localStream){
-        const origin = location.protocol;
-        const capOk = !!video.captureStream;
-        addLog('Create Offer: no local stream yet. Load a video first.', 'err');
-        addLog(`Hints: use Chrome/Edge; avoid Safari. Open via HTTPS or http://localhost (current origin: ${origin}). captureStream supported: ${capOk}`, 'sys');
-        toast('Load a video first (Host)');
-        return;
-      }
-
-      const peerId = createPeer({asHost:true});
-      const {pc} = peers.get(peerId);
-
-      replaceTracks(pc);
-
-      const offer = await pc.createOffer({offerToReceiveAudio:false, offerToReceiveVideo:false});
-      await pc.setLocalDescription(offer);
-
-      await waitForIceGathering(pc);
-
-      const out = {
-        v: 1,
-        peerId,
-        role: 'host',
-        sdp: pc.localDescription,
-        meta: { name: clampStr(displayName.value, 30) || 'Host', room: (clampStr(roomName?.value || '', 30) || 'Player') }
-      };
-
-      offerBox.value = JSON.stringify(out, null, 2);
-      toast('Offer created');
-      addLog('Offer created. Send it to your friend.', 'sys');
-    } catch(err){
-      console.error(err);
-      addLog('Create Offer failed: ' + (err?.message || err), 'err');
-      toast('Create Offer failed (see log)');
-    }
-  }
-
-  async function createAnswerFromOffer(){
-    if(mode !== 'viewer') return toast('Switch to Viewer');
-
-    let inObj;
-    try{ inObj = JSON.parse(answerBox.value); } catch {
-      addLog('Paste a valid offer JSON into the Viewer box.', 'err');
-
-    // If the host included a room name in the offer, show it immediately.
-    if(inObj?.meta?.room){
-      currentRoomName = clampStr(inObj.meta.room, 30) || 'Player';
-      syncRoomName(false);
-    }
+  
+  // -----------------------------
+  // WebSocket-driven offer/answer
+  // -----------------------------
+  async function hostCreateOfferForViewer(viewerId, viewerName){
+    if(mode !== 'host') return;
+    if(!localStream){
+      addLog('No local stream yet. Load a video first (Host).', 'err');
       return;
     }
 
-    const peerId = createPeer({asHost:false});
+    // If viewer is reconnecting, drop previous pc
+    if(peers.has(viewerId)){
+      try{ peers.get(viewerId).pc?.close?.(); }catch{}
+      peers.delete(viewerId);
+    }
+
+    const peerId = createPeer({asHost:true, forcedPeerId: viewerId});
     const {pc} = peers.get(peerId);
+    peers.get(peerId).name = viewerName || 'Viewer';
+    peers.get(peerId).role = 'viewer';
 
-    await pc.setRemoteDescription(inObj.sdp);
+    // Add tracks
+    for(const t of localStream.getTracks()){
+      pc.addTrack(t, localStream);
+    }
+    // Also send audio track if external audio enabled
+    try{
+      if(audioStream){
+        for(const t of audioStream.getTracks()){
+          pc.addTrack(t, audioStream);
+        }
+      }
+    }catch{}
 
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-
+    const off = await pc.createOffer();
+    await pc.setLocalDescription(off);
     await waitForIceGathering(pc);
 
-    const out = {
-      v: 1,
-      peerId: inObj.peerId,
-      role: 'viewer',
+    wsSend({
+      type:'offer',
+      v:1,
+      roomId: sessionRoomId,
+      to: viewerId,
+      from: clientId,
+      peerId,
       sdp: pc.localDescription,
-      meta: { name: clampStr(displayName.value, 30) || 'Viewer' }
-    };
+      meta: {
+        name: clampStr(displayName?.value || '', 30) || 'Host',
+        room: (clampStr(roomName?.value || '', 30) || 'Player')
+      }
+    });
 
-    offerBox.value = '';
-    answerBox.value = JSON.stringify(out, null, 2);
-    toast('Answer created');
-    addLog('Answer created. Send it back to the host.', 'sys');
-  }
-
-  async function applyAnswerOnViewer(){
-    toast('Viewer does not apply answers');
-  }
-
-  async function applyViewerAnswerOnHost(){
-    if(mode !== 'host') return toast('Switch to Host');
-
-    let inObj;
-    try{ inObj = JSON.parse(answerBox.value); } catch {
-      addLog('Paste a valid Viewer Answer JSON into the Viewer → Host box.', 'err');
-      return;
-    }
-
-    const peerId = inObj.peerId;
-    const peer = peers.get(peerId);
-    if(!peer){
-      addLog('Host cannot find that peerId. Create an Offer first, then apply the Answer.', 'err');
-      return;
-    }
-
-    await peer.pc.setRemoteDescription(inObj.sdp);
-
-    if(inObj.meta?.name) peer.name = inObj.meta.name;
-    updateSubsUiForRole();
     renderMembers();
-
-    toast('Answer applied');
-    addLog('Viewer answer applied. Connection should establish shortly.', 'sys');
+    addLog(`Sent offer to ${viewerName || 'Viewer'}.`, 'sys');
   }
 
-  function waitForIceGathering(pc){
+  async function viewerHandleOffer(msg){
+    try{
+      const inObj = msg || {};
+      if(inObj?.meta?.room){
+        currentRoomName = clampStr(inObj.meta.room, 30) || 'Player';
+        syncRoomName(false);
+      }
+
+      const peerId = String(inObj.peerId || inObj.from || '');
+      if(!peerId) return;
+
+      // Replace existing connection on refresh / rejoin
+      if(peers.has(peerId)){
+        try{ peers.get(peerId).pc?.close?.(); }catch{}
+        peers.delete(peerId);
+      }
+
+      const pid = createPeer({asHost:false, forcedPeerId: peerId});
+      const {pc} = peers.get(pid);
+
+      await pc.setRemoteDescription(inObj.sdp);
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      await waitForIceGathering(pc);
+
+      wsSend({
+        type:'answer',
+        v:1,
+        roomId: sessionRoomId,
+        to: String(inObj.from || hostIdInRoom || ''),
+        from: clientId,
+        peerId: pid,
+        sdp: pc.localDescription,
+        meta: { name: clampStr(displayName?.value || '', 30) || 'Viewer' }
+      });
+
+      addLog('Auto-joined host. Sending answer…', 'sys');
+      renderMembers();
+    }catch(err){
+      console.error(err);
+      addLog('Auto-join failed: ' + (err?.message || err), 'err');
+    }
+  }
+
+  async function hostApplyAnswer(msg){
+    try{
+      const inObj = msg || {};
+      const peerId = String(inObj.peerId || inObj.from || '');
+      const peer = peers.get(peerId);
+      if(!peer){
+        addLog('Received answer for unknown peer. Viewer may have reloaded; waiting for rejoin…', 'err');
+        return;
+      }
+      await peer.pc.setRemoteDescription(inObj.sdp);
+      if(inObj.meta?.name) peer.name = inObj.meta.name;
+
+      updateSubsUiForRole?.();
+      renderMembers();
+      addLog(`Viewer connected: ${peer.name || 'Viewer'}`, 'sys');
+    }catch(err){
+      console.error(err);
+      addLog('Apply answer failed: ' + (err?.message || err), 'err');
+    }
+  }
+
+function waitForIceGathering(pc){
+
     return new Promise((resolve) => {
       if(pc.iceGatheringState === 'complete') return resolve();
       const on = () => {
@@ -3490,14 +3653,18 @@ function replaceTracks(pc){
       setTimeout(()=> resolve(), 1500);
     });
   }
+  on(btnShare,'click', async ()=>{
+    if(mode !== 'host') return toast('Switch to Host');
+    // Create or reuse a persistent room id so refresh keeps the same link
+    const prev = loadSession();
+    sessionRoomId = sessionRoomId || prev.roomId || makeRoomId();
+    connectSignaling('host', sessionRoomId);
+    updateShareLinkUI();
+    await copyToClipboard(shareLink?.value || '');
+    addLog('Share link copied to clipboard.', 'sys');
+  });
 
-  on(btnMakeOffer,'click', createOffer);
-  on(btnMakeAnswer,'click', createAnswerFromOffer);
-  on(btnApplyAnswer,'click', applyAnswerOnViewer);
-  on(btnApplyViewerAnswer,'click', applyViewerAnswerOnHost);
-
-  on(btnCopyOffer,'click', ()=> offerBox?.value && copyToClipboard(offerBox.value));
-  on(btnCopyAnswer,'click', ()=> answerBox?.value && copyToClipboard(answerBox.value));
+  on(btnCopyLink,'click', ()=> shareLink?.value && copyToClipboard(shareLink.value));
 
   // -----------------------------
   // Sync loop
