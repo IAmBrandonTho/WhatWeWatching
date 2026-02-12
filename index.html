@@ -1200,27 +1200,44 @@ window.addEventListener('DOMContentLoaded', () => {
     return t.length > maxLen ? t.slice(0, maxLen) : t;
   }
   async function copyToClipboard(text){
+    // Prefer modern Clipboard API
     try{
-      if(navigator.clipboard?.writeText){
+      if (navigator.clipboard && window.isSecureContext){
         await navigator.clipboard.writeText(text);
-      }else{
-        // Fallback for older browsers / insecure origins
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        document.execCommand('copy');
-        ta.remove();
+        toast('Copied!');
+        return true;
       }
-      toast('Copied');
     }catch(err){
-      addLog('Clipboard copy failed (try HTTPS): ' + (err?.message || err), 'err');
-      toast('Copy failed');
+      // fall through to legacy copy
+      addLog('Clipboard API failed: ' + (err?.message || err), 'warn');
+    }
+
+    // Legacy fallback: temporary textarea + execCommand('copy')
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly','');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.left = '-1000px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok){
+        toast('Copied!');
+        return true;
+      }
+      throw new Error('execCommand copy returned false');
+    }catch(err){
+      addLog('Copy fallback failed: ' + (err?.message || err), 'err');
+      // Final fallback: select share link input so user can copy manually
+      try{ if(shareLink){ shareLink.focus(); shareLink.select(); } }catch{}
+      toast('Copy failed — link selected');
+      return false;
     }
   }
-
 
   function fmtTime(sec){
     sec = Math.max(0, Number(sec || 0));
@@ -1859,21 +1876,15 @@ let remoteStream = new MediaStream(); // viewer receives into this
     });
   }
 
-  function buildShareLink(){
+  function updateShareLinkUI(){
+    if(!shareLink) return;
     const u = new URL(location.href);
     u.searchParams.set('room', sessionRoomId);
-    // Carry signaling endpoint only if overridden
+    // carry signaling endpoint only if different from default
     const wsOverride = parseWsFromUrl() || '';
     if(wsOverride) u.searchParams.set('ws', wsOverride);
-    else u.searchParams.delete('ws');
-    u.hash = '';
-    return u.toString();
-  }
-
-  function updateShareLinkUI(){
-    // Optional UI: if an <input id="shareLink"> exists, show the URL there.
-    if(!shareLink) return;
-    shareLink.value = buildShareLink();
+    u.hash = ''; // keep clean; you can switch to #room= if you prefer
+    shareLink.value = u.toString();
   }
 
   function renderMembersFromSignal(msg){
@@ -3671,14 +3682,9 @@ function waitForIceGathering(pc){
     // Create or reuse a persistent room id so refresh keeps the same link
     const prev = loadSession();
     sessionRoomId = sessionRoomId || prev.roomId || makeRoomId();
-
-    // Ensure signaling is up for this room (host)
     connectSignaling('host', sessionRoomId);
-
-    // Build + (optionally) display + copy the share URL
-    const url = buildShareLink();
     updateShareLinkUI();
-    await copyToClipboard(url);
+    await copyToClipboard(shareLink?.value || '');
     addLog('Share link copied to clipboard.', 'sys');
   });
 
