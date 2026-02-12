@@ -1216,10 +1216,8 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       toast('Copied');
     }catch(err){
-      addLog('Clipboard copy failed: ' + (err?.message || err), 'err');
-      // Fallback: select the share link input so you can copy manually
-      try{ if(shareLink){ shareLink.focus(); shareLink.select(); } }catch{}
-      toast('Copy failed — link selected');
+      addLog('Clipboard copy failed (try HTTPS): ' + (err?.message || err), 'err');
+      toast('Copy failed');
     }
   }
 
@@ -1861,15 +1859,21 @@ let remoteStream = new MediaStream(); // viewer receives into this
     });
   }
 
-  function updateShareLinkUI(){
-    if(!shareLink) return;
+  function buildShareLink(){
     const u = new URL(location.href);
     u.searchParams.set('room', sessionRoomId);
-    // carry signaling endpoint only if different from default
+    // Carry signaling endpoint only if overridden
     const wsOverride = parseWsFromUrl() || '';
     if(wsOverride) u.searchParams.set('ws', wsOverride);
-    u.hash = ''; // keep clean; you can switch to #room= if you prefer
-    shareLink.value = u.toString();
+    else u.searchParams.delete('ws');
+    u.hash = '';
+    return u.toString();
+  }
+
+  function updateShareLinkUI(){
+    // Optional UI: if an <input id="shareLink"> exists, show the URL there.
+    if(!shareLink) return;
+    shareLink.value = buildShareLink();
   }
 
   function renderMembersFromSignal(msg){
@@ -3667,9 +3671,14 @@ function waitForIceGathering(pc){
     // Create or reuse a persistent room id so refresh keeps the same link
     const prev = loadSession();
     sessionRoomId = sessionRoomId || prev.roomId || makeRoomId();
+
+    // Ensure signaling is up for this room (host)
     connectSignaling('host', sessionRoomId);
+
+    // Build + (optionally) display + copy the share URL
+    const url = buildShareLink();
     updateShareLinkUI();
-    await copyToClipboard(shareLink?.value || '');
+    await copyToClipboard(url);
     addLog('Share link copied to clipboard.', 'sys');
   });
 
