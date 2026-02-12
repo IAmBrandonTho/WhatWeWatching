@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PeerWatch Party — self-contained WebRTC watch room</title>
+  <title>What We Watching — self-contained WebRTC watch room</title>
   <style>
     :root{
       --uiScale:1;
@@ -80,7 +80,16 @@
     .wrap{max-width:1200px;margin:0 auto;padding:18px 16px 10px;}
     .topbar{display:flex;gap:12px;align-items:center;justify-content:space-between;}
     .brand{display:flex;align-items:center;gap:10px;}
-    .logo{width:36px;height:36px;border-radius:12px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);box-shadow:var(--shadow)}
+    .logo{
+      width:36px;
+      height:36px;
+      border-radius:12px;
+      background:linear-gradient(135deg, var(--accentA), var(--accentB));
+      border:1px solid rgba(255,255,255,.35);
+      box-shadow:
+        0 6px 18px rgba(0,0,0,.35),
+        0 0 18px rgba(var(--accentRGB), .45);
+    }
     h1{font-size:16px;margin:0;letter-spacing:.3px}
     .pill{font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.04)}
 
@@ -679,7 +688,13 @@ select option:hover{
       pointer-events: auto;
     }
 
-  </style>
+  
+header .mini{
+  color: var(--muted);
+  opacity: .95;
+}
+
+</style>
 </head>
 <body>
 <header>
@@ -688,8 +703,8 @@ select option:hover{
       <div class="brand">
         <div class="logo" aria-hidden="true"></div>
         <div>
-          <h1>PeerWatch Party</h1>
-          <div class="mini">Self-contained WebRTC watch room (manual copy/paste signaling)</div>
+          <h1>What We Watching</h1>
+          <div class="mini">Self-contained Peer-To-Peer WebRTC Watch Room.</div>
         </div>
       </div>
       <div class="row" style="gap:10px">
@@ -832,7 +847,7 @@ select option:hover{
       </div>
 
       <div class="grid2">
-        <div>
+        <div style="grid-column:1/-1;">
           <div class="kv" style="grid-template-columns: 130px 1fr">
             <label for="themeSel">Theme</label>
             <select id="themeSel" class="nativeSelect" aria-hidden="true" tabindex="-1">
@@ -902,8 +917,12 @@ select option:hover{
             </div>
 
             <div class="kv" style="grid-column:1/-1;">
-              <label>Font Size</label>
-              <input id="subsFontSize" type="number" min="0.5" max="15" step="0.1" />
+              <label>Font Size/Color</label>
+              <div class="row" style="gap:10px; flex-wrap:nowrap; align-items:center">
+                <input id="subsFontSize" type="number" min="0.5" max="15" step="0.1" />
+                <input id="subsColor" type="color" />
+                <input id="subsColorText" type="text" placeholder="#ffffff" style="max-width:140px" />
+              </div>
             </div>
 
             <div class="kv" style="grid-column:1/-1;">
@@ -912,14 +931,6 @@ select option:hover{
                 <label class="chk"><input id="subsBold" type="checkbox" /> <span>Bold</span></label>
                 <label class="chk"><input id="subsItalic" type="checkbox" /> <span>Italic</span></label>
                 <label class="chk"><input id="subsUnderline" type="checkbox" /> <span>Underline</span></label>
-              </div>
-            </div>
-
-            <div class="kv" style="grid-column:1/-1;">
-              <label>Text color</label>
-              <div class="row" style="gap:10px; flex-wrap:nowrap; align-items:center">
-                <input id="subsColor" type="color" />
-                <input id="subsColorText" type="text" placeholder="#ffffff" style="max-width:140px" />
               </div>
             </div>
 
@@ -950,7 +961,7 @@ select option:hover{
             </div>
 
             <div class="kv" style="grid-column:1/-1;">
-              <label>Bottom (% of video height)</label>
+              <label>Bottom Position</label>
               <input id="subsBottom" type="number" min="0" max="45" step="0.5" />
             </div>
           </div>
@@ -968,17 +979,17 @@ select option:hover{
           </div>
 
           <div class="kv" style="grid-template-columns: 130px 1fr;">
-            <label>Timing</label>
+            <label>
+              Offset 
+              <span id="subsOffsetLabel" style="font-family:var(--mono)">0ms</span>
+            </label>
             <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
-              <span class="pill" style="display:flex; gap:10px; align-items:center">
-                <span class="mini" style="color:var(--muted)">Offset</span>
-                <span id="subsOffsetLabel" style="font-family:var(--mono)">0ms</span>
-              </span>
               <button id="btnSubsAdvance1000" class="small" title="Show subtitles 1000ms earlier">-1000</button>
               <button id="btnSubsAdvance100" class="small" title="Show subtitles 100ms earlier">-100</button>
+              <button id="btnSubsOffsetReset" class="small" title="Reset timing offset">Reset</button>
               <button id="btnSubsDelay100" class="small" title="Delay subtitles by 100ms">+100</button>
               <button id="btnSubsDelay1000" class="small" title="Delay subtitles by 1000ms">+1000</button>
-              <button id="btnSubsOffsetReset" class="small" title="Reset timing offset">Reset</button>
+              
             </div>
           </div>
 
@@ -1129,7 +1140,7 @@ select option:hover{
 <input id="vttPick" type="file" accept="text/vtt,.vtt,.srt,text/srt,application/x-subrip" hidden />
 
 <script>
-(() => {
+window.addEventListener('DOMContentLoaded', () => {
   "use strict";
 
   // -----------------------------
@@ -1479,6 +1490,18 @@ select option:hover{
     audioMode = next;
     applyDesiredAudioState();
     applyAudioRouting();
+    // Ensure the newly selected output is actually audible immediately (no extra mute toggle needed)
+    if(next === 'video'){
+      try{ if(!desiredMuted && Number(desiredVolume) > 0) video.muted = false; }catch{}
+    }else{
+      try{
+        if(audioEl && audioEl.src){
+          if(!desiredMuted && Number(desiredVolume) > 0) audioEl.muted = false;
+          // If the video is currently playing, start external audio right away
+          if(!video.paused) audioEl.play().catch(()=>{});
+        }
+      }catch{}
+    }
     if(mode === 'host'){
       updateOutgoingStreamAndPeers();
       broadcastCtrl({type:'audioSrc', mode: audioMode});
@@ -1857,6 +1880,12 @@ const prefRate = (p.rate ?? 1);
     // Sliding volume implies unmute (matching prior behavior)
     desiredMuted = false;
     applyDesiredAudioState();
+    // If using external audio and video is playing, ensure external audio is playing too
+    try{
+      if(audioMode === 'external' && audioEl && audioEl.src && !video.paused){
+        if(audioEl.paused) audioEl.play().catch(()=>{});
+      }
+    }catch{}
     paintRange(vol);
     syncMuteIcon();
     savePrefs();
@@ -3634,7 +3663,8 @@ function replaceTracks(pc){
     toast('Init failed (see console/log)');
   }
 
-})();
+
+});
 </script>
 </body>
 </html>
