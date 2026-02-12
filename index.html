@@ -3198,64 +3198,79 @@ btnRewind.addEventListener('click', ()=> seekBy(-10));
     for(const p of peers.values()) addMember(p.name || 'Viewer');
   }
 
-  function createPeer({asHost, forcedPeerId=null}){
-    const peerId = forcedPeerId || makePeerId();
-    const pc = new RTCPeerConnection(RTC_CFG);
 
-    let dc = null;
-    if(asHost){
-      dc = pc.createDataChannel('peerwatch', {ordered:true});
+function createPeer({asHost, forcedPeerId=null}){
+  const peerId = forcedPeerId || makePeerId();
+  const pc = new RTCPeerConnection(RTC_CFG);
+
+  // IMPORTANT: register peer record BEFORE creating/receiving a datachannel
+  // so setupDataChannel() never sees an undefined peer.
+  peers.set(peerId, {pc, dc: null, name: null});
+
+  let dc = null;
+  if(asHost){
+    dc = pc.createDataChannel('peerwatch', {ordered:true});
+    peers.get(peerId).dc = dc;
+    setupDataChannel(peerId, dc);
+  } else {
+    pc.ondatachannel = (e)=>{
+      dc = e.channel;
+      // ensure we keep the latest dc reference
+      const p = peers.get(peerId) || {pc, dc: null, name: null};
+      p.pc = pc;
+      p.dc = dc;
+      peers.set(peerId, p);
       setupDataChannel(peerId, dc);
-    } else {
-      pc.ondatachannel = (e)=>{
-        dc = e.channel;
-        setupDataChannel(peerId, dc);
-      };
-    }
-
-    pc.oniceconnectionstatechange = () => {
-      const s = pc.iceConnectionState;
-      if(s === 'connected' || s === 'completed'){
-        setStatus(true, 'Connected');
-        addLog(`Peer ${peerId}: ICE ${s}`, 'sys');
-      }
-      if(s === 'failed' || s === 'disconnected'){
-        setStatus(false, `Connection ${s}`);
-        addLog(`Peer ${peerId}: ICE ${s}`, 'err');
-      }
     };
-
-    pc.onconnectionstatechange = () => {
-      const s = pc.connectionState;
-      if(s === 'connected'){
-        setStatus(true, 'Connected');
-        addLog(`Peer ${peerId}: connected`, 'sys');
-        if(mode === 'host'){
-	          sendAllHostVttsToDc(dc);
-          broadcastStateToPeer(peerId);
-        }
-      }
-      if(s === 'closed') addLog(`Peer ${peerId}: closed`, 'sys');
-    };
-
-    if(!asHost){
-      pc.ontrack = (ev) => {
-        for(const tr of ev.streams[0].getTracks()) remoteStream.addTrack(tr);
-        showOverlay(false);
-      };
-    }
-
-    peers.set(peerId, {pc, dc, name: null});
-    activePeerId = peerId;
-    updateSubsUiForRole();
-    renderMembers();
-
-    return peerId;
   }
 
-  function setupDataChannel(peerId, dc){
-    const peer = peers.get(peerId);
-    peer.dc = dc;
+  pc.oniceconnectionstatechange = () => {
+    const s = pc.iceConnectionState;
+    if(s === 'connected' || s === 'completed'){
+      setStatus(true, 'Connected');
+      addLog(`Peer ${peerId}: ICE ${s}`, 'sys');
+    }
+    if(s === 'failed' || s === 'disconnected'){
+      setStatus(false, `Connection ${s}`);
+      addLog(`Peer ${peerId}: ICE ${s}`, 'err');
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if(s === 'connected'){
+      setStatus(true, 'Connected');
+      addLog(`Peer ${peerId}: connected`, 'sys');
+      if(mode === 'host'){
+        sendAllHostVttsToDc(dc);
+        broadcastStateToPeer(peerId);
+      }
+    }
+    if(s === 'closed') addLog(`Peer ${peerId}: closed`, 'sys');
+  };
+
+  if(!asHost){
+    pc.ontrack = (ev) => {
+      for(const tr of ev.streams[0].getTracks()) remoteStream.addTrack(tr);
+      showOverlay(false);
+    };
+  }
+
+  activePeerId = peerId;
+  updateSubsUiForRole();
+  renderMembers();
+
+  return peerId;
+}
+
+function setupDataChannel(peerId, dc){
+  let peer = peers.get(peerId);
+  if(!peer){
+    // Fallback safety: create a placeholder peer record
+    peer = {pc: null, dc: null, name: null};
+    peers.set(peerId, peer);
+  }
+  peer.dc = dc;
 
     dc.onopen = () => {
       addLog(`Data channel open (${peerId})`, 'sys');
@@ -3870,20 +3885,6 @@ function waitForIceGathering(pc){
     initThemePicker();
     initSubsFontPicker();
     setMode('viewer');
-
-    // Auto-connect to signaling when opened via a shared room link (works in Incognito too)
-    try{
-      const urlRoom = parseRoomFromUrl();
-      const prev = loadSession();
-      sessionRoomId = urlRoom || prev.roomId || '';
-      if(urlRoom){
-        connectSignaling('viewer', urlRoom);
-      } else {
-        setStatus(false, 'Waiting for room link');
-      }
-    }catch(e){
-      // non-fatal
-    }
     applyTheme(themeSel?.value || document.documentElement.dataset.theme || 'midnight');
     syncPlayButtons();
     syncAccentDerived();
