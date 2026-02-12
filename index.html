@@ -1749,7 +1749,7 @@ let remoteStream = new MediaStream(); // viewer receives into this
   }
 
   // Default: same host as the page (ws/wss). Override with ?ws=wss://...
-  const DEFAULT_SIGNAL_URL = 'wss://whatwewatching-signal.librandon2008.workers.dev';
+  const DEFAULT_SIGNAL_URL = 'wss://whatwewatching.librandon2008.workers.dev';
   const SIGNAL_URL = parseWsFromUrl() || DEFAULT_SIGNAL_URL;
 
   function buildSignalWsUrl(base, roomId){
