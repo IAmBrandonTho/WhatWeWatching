@@ -1216,8 +1216,10 @@ window.addEventListener('DOMContentLoaded', () => {
       }
       toast('Copied');
     }catch(err){
-      addLog('Clipboard copy failed (try HTTPS): ' + (err?.message || err), 'err');
-      toast('Copy failed');
+      addLog('Clipboard copy failed: ' + (err?.message || err), 'err');
+      // Fallback: select the share link input so you can copy manually
+      try{ if(shareLink){ shareLink.focus(); shareLink.select(); } }catch{}
+      toast('Copy failed — link selected');
     }
   }
 
@@ -3670,8 +3672,6 @@ function waitForIceGathering(pc){
     await copyToClipboard(shareLink?.value || '');
     addLog('Share link copied to clipboard.', 'sys');
   });
-
-  on(btnCopyLink,'click', ()=> shareLink?.value && copyToClipboard(shareLink.value));
 
   // -----------------------------
   // Sync loop
