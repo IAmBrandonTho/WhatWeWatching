@@ -3870,6 +3870,20 @@ function waitForIceGathering(pc){
     initThemePicker();
     initSubsFontPicker();
     setMode('viewer');
+
+    // Auto-connect to signaling when opened via a shared room link (works in Incognito too)
+    try{
+      const urlRoom = parseRoomFromUrl();
+      const prev = loadSession();
+      sessionRoomId = urlRoom || prev.roomId || '';
+      if(urlRoom){
+        connectSignaling('viewer', urlRoom);
+      } else {
+        setStatus(false, 'Waiting for room link');
+      }
+    }catch(e){
+      // non-fatal
+    }
     applyTheme(themeSel?.value || document.documentElement.dataset.theme || 'midnight');
     syncPlayButtons();
     syncAccentDerived();
