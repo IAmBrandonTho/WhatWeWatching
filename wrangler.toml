@@ -9,3 +9,15 @@ class_name = "Room"
 [[migrations]]
 tag = "v1"
 new_classes = ["Room"]
+
+
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "whatwewatching-videos"
+
+[vars]
+PUBLIC_VIDEO_BASE = "https://pub-4166aa96d4fa43369eae21feb27f9263.r2.dev"
+
+
+[triggers]
+crons = ["*/5 * * * *"]

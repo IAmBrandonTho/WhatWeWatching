@@ -1,116 +1,142 @@
 
+import { handleStream } from "./stream.js";
+import { Room } from "./room.js";
+
+export { Room };
+
 export default {
   async fetch(request, env) {
-    if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("WebSocket endpoint", { status: 200 });
-    }
-
     const url = new URL(request.url);
-        let roomId = url.searchParams.get("room");
-    if (!roomId) {
-      const parts = url.pathname.split('/').filter(Boolean);
-      // allow /ws/<roomId>
-      if (parts.length >= 2 && parts[0] === 'ws') roomId = parts[1];
+
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "*"
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: cors });
     }
-    roomId = roomId || "default";
 
-    const id = env.ROOMS.idFromName(roomId);
-    const obj = env.ROOMS.get(id);
 
-    return obj.fetch(request);
+    // ---- Proxy FFmpeg assets from R2 to same-origin (avoids CORS/worker importScripts issues)
+    if (url.pathname.startsWith("/ffmpeg/")) {
+      const file = url.pathname.replace(/^\/ffmpeg\//, "");
+      const allowed = new Set(["814.ffmpeg.js","ffmpeg-core.js","ffmpeg-core.wasm"]);
+      if (!allowed.has(file)) return new Response("Not found", { status: 404, headers: { ...cors } });
+
+      const upstream = `https://pub-4166aa96d4fa43369eae21feb27f9263.r2.dev/ffmpeg/${file}`;
+      // Forward Range requests (wasm sometimes uses them)
+      const reqHeaders = new Headers();
+      const range = request.headers.get("range");
+      if (range) reqHeaders.set("range", range);
+
+      const up = await fetch(upstream, { headers: reqHeaders });
+      if (!up.ok) return new Response(`Upstream error ${up.status}`, { status: 502, headers: { ...cors } });
+
+      const h = new Headers(up.headers);
+      // Force correct content-type (Cloudflare sometimes serves wasm as octet-stream)
+      if (file.endsWith(".js")) h.set("Content-Type", "application/javascript; charset=utf-8");
+      if (file.endsWith(".wasm")) h.set("Content-Type", "application/wasm");
+
+      // Make sure our CORS headers are present (harmless even same-origin)
+      for (const [k,v] of Object.entries(cors)) h.set(k, v);
+
+      // Allow caching at edge
+      h.set("Cache-Control", "public, max-age=86400");
+
+      return new Response(up.body, { status: up.status, headers: h });
+    }
+
+    // ---- New: chunked upload + stitched streaming (/upload/init, /upload/part, /v/:id)
+    const streamResponse = await handleStream(request, env, cors);
+    if (streamResponse) return streamResponse;
+
+    // ---- Legacy compatibility: single-shot upload used by the existing UI (/upload)
+    if (url.pathname === "/upload" && request.method === "POST") {
+      const file = await request.arrayBuffer();
+      const id = crypto.randomUUID();
+      const key = `videos/${id}.mp4`;
+
+      const ct = request.headers.get("content-type") || "video/mp4";
+      await env.VIDEOS.put(key, file, { httpMetadata: { contentType: ct } });
+
+      const publicUrl = `${env.PUBLIC_VIDEO_BASE}/${key}`;
+      return new Response(JSON.stringify({ url: publicUrl }), {
+        headers: { "Content-Type": "application/json", ...cors }
+      });
+    }
+
+    // ---- WebSocket signaling (Durable Object Room)
+    if (request.headers.get("Upgrade") === "websocket") {
+      // Allow:
+      //  - wss://.../?room=<id>
+      //  - wss://.../ws/<id>
+      let roomId = url.searchParams.get("room");
+      if (!roomId) {
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (parts.length >= 2 && parts[0] === "ws") roomId = parts[1];
+      }
+
+      roomId = sanitizeRoomId(roomId) || "default";
+
+      const id = env.ROOMS.idFromName(roomId);
+      const obj = env.ROOMS.get(id);
+      return obj.fetch(request);
+    }
+
+    // Health / default response
+    return new Response("OK", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8", ...cors }
+    });
+  },
+
+  
+  // Auto cleanup cron (deletes expired videos)
+  async scheduled(event, env) {
+    const now = Date.now();
+
+    // R2 list() is paginated; walk all meta.json objects under videos/
+    let cursor = undefined;
+    for (;;) {
+      const page = await env.VIDEOS.list({ prefix: "videos/", cursor });
+      cursor = page.cursor;
+
+      for (const obj of page.objects) {
+        if (!obj.key.endsWith("meta.json")) continue;
+
+        const metaObj = await env.VIDEOS.get(obj.key);
+        if (!metaObj) continue;
+
+        let meta = null;
+        try { meta = await metaObj.json(); } catch { continue; }
+
+        if (meta?.expiresAt && meta.expiresAt < now) {
+          const prefix = obj.key.replace("/meta.json", "");
+
+          // Delete everything under the video's prefix (paginated)
+          let delCursor = undefined;
+          for (;;) {
+            const parts = await env.VIDEOS.list({ prefix, cursor: delCursor });
+            delCursor = parts.cursor;
+
+            // Parallelize a bit, but keep it bounded
+            await Promise.all(parts.objects.map(p => env.VIDEOS.delete(p.key)));
+
+            if (!delCursor) break;
+          }
+        }
+      }
+
+      if (!cursor) break;
+    }
   }
 };
 
-export class Room {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-    // clientId -> { ws, role, name }
-    this.sessions = new Map();
-    this.hostId = null;
-  }
 
-  _broadcast(obj) {
-    const data = JSON.stringify(obj);
-    for (const { ws } of this.sessions.values()) {
-      try { ws.send(data); } catch {}
-    }
-  }
-
-  _sendTo(clientId, obj) {
-    const s = this.sessions.get(clientId);
-    if (!s?.ws) return;
-    try { s.ws.send(JSON.stringify(obj)); } catch {}
-  }
-
-  _peerlist() {
-    const peers = [];
-    for (const [id, s] of this.sessions.entries()) {
-      peers.push({ id, role: s.role || 'viewer', name: s.name || (s.role === 'host' ? 'Host' : 'Viewer') });
-    }
-    return peers;
-  }
-
-  async fetch(request) {
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair);
-    server.accept();
-
-    let clientId = crypto.randomUUID();
-    let role = 'viewer';
-    let name = 'Viewer';
-
-    server.addEventListener("message", (event) => {
-      let msg;
-      try { msg = JSON.parse(event.data); } catch { return; }
-
-      if (msg.type === "hello") {
-        clientId = msg.clientId;
-        role = (msg.role === 'host' ? 'host' : 'viewer');
-        name = msg.name || (role === 'host' ? 'Host' : 'Viewer');
-
-        this.sessions.set(clientId, { ws: server, role, name });
-        if (role === "host") this.hostId = clientId;
-
-        server.send(JSON.stringify({
-          type: "welcome",
-          roomId: msg.roomId,
-          hostId: this.hostId
-        }));
-
-        // Send updated peer list to everyone
-        this._broadcast({ type: 'peerlist', roomId: msg.roomId, hostId: this.hostId, peers: this._peerlist() });
-
-        // Nudge host<->viewer matching: when a viewer joins and a host exists, notify host.
-        if (role === 'viewer' && this.hostId) {
-          this._sendTo(this.hostId, { type: 'viewer-join', roomId: msg.roomId, viewerId: clientId, name });
-        }
-
-        // If the host joins and there are already viewers, notify host for each.
-        if (role === 'host') {
-          for (const [id, s] of this.sessions.entries()) {
-            if (id !== this.hostId && (s.role || 'viewer') !== 'host') {
-              this._sendTo(this.hostId, { type: 'viewer-join', roomId: msg.roomId, viewerId: id, name: s.name || 'Viewer' });
-            }
-          }
-        }
-        return;
-      }
-
-      if (msg.to && this.sessions.has(msg.to)) {
-        // direct message relay
-        const s = this.sessions.get(msg.to);
-        try { s.ws.send(JSON.stringify(msg)); } catch {}
-      }
-    });
-
-    server.addEventListener("close", () => {
-      this.sessions.delete(clientId);
-      if (this.hostId === clientId) this.hostId = null;
-      // Broadcast updated peer list on leave
-      this._broadcast({ type: 'peerlist', hostId: this.hostId, peers: this._peerlist() });
-    });
-
-    return new Response(null, { status: 101, webSocket: client });
-  }
+function sanitizeRoomId(roomId) {
+  if (!roomId) return "";
+  const v = String(roomId).trim();
+  return v.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
 }

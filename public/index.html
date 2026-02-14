@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+
+<html data-theme="mono" lang="en">
+<head>
+<meta charset="utf-8"/>
+<script>
+(()=>{
+  try{
+    const p = JSON.parse(localStorage.getItem('peerwatch_prefs')||'{}');
+    const t = (p && p.theme) ? String(p.theme) : 'mono';
+    document.documentElement.dataset.theme = t || 'mono';
+  }catch(e){
+    document.documentElement.dataset.theme = 'mono';
+  }
+})();
+</script>
+
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<meta content="wss://whatwewatching-signal.lilbrandon2008.workers.dev" name="signal-url"/>
+<title>What We Watching — self-contained WebRTC watch room</title>
+<link href="./styles.css" rel="stylesheet"/>
+</head>
+<script>
+(function(){
+  const logEl = ()=>document.getElementById('log');
+  function push(msg){
+    try{
+      const el = logEl();
+      if(!el) return;
+      const ts = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className='line err';
+      div.textContent = `[${ts}] JS error: ${msg}`;
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+    }catch(e){}
+  }
+  window.addEventListener('error', function(ev){
+    const src = ev && ev.filename ? ev.filename.split('?')[0] : '';
+    push(`${ev.message || 'Error'} ${src?(' @ '+src+':'+ev.lineno+':'+ev.colno):''}`);
+    if(ev.error && ev.error.stack) push(ev.error.stack.split('\n').slice(0,3).join(' | '));
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    const r = ev.reason;
+    push(`Unhandled rejection: ${r && (r.message||String(r))}`);
+    if(r && r.stack) push(r.stack.split('\n').slice(0,3).join(' | '));
+  });
+})();
+</script>
+
+<body>
+<header>
+<div class="wrap">
+<div class="topbar">
+<div class="brand">
+<div aria-hidden="true" class="logo"></div>
+<div>
+<h1>What We Watching</h1>
+<div class="mini">Self-contained Peer-To-Peer WebRTC Watch Room.</div>
+</div>
+</div>
+<div class="row" style="gap:10px">
+<button class="small" id="btnHost">Host</button>
+<button class="small" id="btnViewer">Viewer</button>
+<button class="small inline" id="btnShare">Share</button>
+<button class="small" id="btnDisconnect" title="Disconnect from room">Disconnect</button>
+<div class="pill" id="statusPill">
+<span class="badge">
+<span class="dot" id="netDot"></span>
+<span id="netText">Not connected</span>
+</span>
+</div>
+</div>
+</div>
+</div>
+</header>
+<main><div class="leftCol"><section class="card videoStage">
+<div class="hd">
+<div class="title">
+<b id="playerTitle">Room</b>
+<small id="roleLabel"></small>
+</div>
+</div>
+<div class="bd">
+<div class="playerShell" id="playerShell">
+<div class="stage" id="stage">
+<video id="video" playsinline=""></video>
+<audio id="audioEl" preload="auto" style="display:none"></audio>
+<div aria-hidden="true" class="subsOverlay" id="subsOverlay"></div>
+<div aria-hidden="true" class="videoMsgOverlay on" id="videoMsgOverlay">
+<div class="videoMsgBubble" id="videoMsgA"></div>
+<div class="videoMsgBubble" id="videoMsgB"></div>
+<div aria-hidden="true" class="videoMsgComposer" id="videoMsgComposer">
+<input autocomplete="off" id="videoMsgComposeInput" placeholder="Type a chat message…" type="text"/>
+<div class="videoMsgComposeActions">
+<button class="primary" id="videoMsgComposeSend" type="button">Send</button>
+<button id="videoMsgComposeCancel" type="button">Cancel</button>
+</div>
+</div>
+</div>
+<div class="overlay" id="overlay">
+<div class="dropHint" id="dropHint">
+            Drop a video file here (Host) • or connect as Viewer
+            <div class="mini" style="margin-top:6px">Supported by your browser (MP4/H.264 is safest)</div>
+</div>
+</div>
+</div>
+<div aria-label="Player controls" class="pwControls" id="pwControls">
+<div class="pwSeekTop">
+<div class="pwSeekLine">
+<input aria-label="Seek" class="seekTop" id="seek" max="1000" min="0" step="1" type="range" value="0"/>
+<span class="timeInline"><span id="timeCur">--:--</span> / <span id="timeDur">--:--</span></span>
+</div>
+</div>
+<div class="pwRow space">
+<div class="pwLeft">
+<button aria-label="Play/Pause" class="iconBtn primary" id="btnPlayPause" title="Play/Pause (Space)">
+<span aria-hidden="true" class="iconSwap">
+<span class="off"><svg aria-hidden="true" class="ico fill" viewbox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></span>
+<span class="on"><svg aria-hidden="true" class="ico fill" viewbox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"></path></svg></span>
+</span>
+</button>
+<button aria-label="Back 10 seconds" class="iconBtn small" id="btnRewind" title="Back 10s"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M12 5v6l-4-3 4-3z"></path><path d="M12 11v6l-4-3 4-3z"></path><path d="M20 18a8 8 0 1 1-1.8-5.1"></path></svg></span></button>
+<button aria-label="Forward 10 seconds" class="iconBtn small" id="btnFwd" title="Forward 10s"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M12 5v6l4-3-4-3z"></path><path d="M12 11v6l4-3-4-3z"></path><path d="M4 18a8 8 0 1 0 1.8-5.1"></path></svg></span></button>
+<button aria-label="Previous frame" class="iconBtn small" id="btnStepBack" title="Step back 1 frame"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M11 7l-6 5 6 5V7z"></path><path d="M19 7l-6 5 6 5V7z"></path></svg></span></button>
+<button aria-label="Next frame" class="iconBtn small" id="btnStepFwd" title="Step forward 1 frame"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M13 7l6 5-6 5V7z"></path><path d="M5 7l6 5-6 5V7z"></path></svg></span></button>
+</div>
+<div class="pwRight sliders">
+<button aria-label="Mute" class="iconBtn small" id="btnMute" title="Mute/Unmute (M)"><span aria-hidden="true" class="iconSwap">
+<span class="off"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M15.5 8.5a4.5 4.5 0 0 1 0 7"></path><path d="M17.5 6a7.5 7.5 0 0 1 0 12"></path></svg></span>
+<span class="on"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"></path><path d="M16 9l5 6"></path><path d="M21 9l-5 6"></path></svg></span>
+</span></button>
+<span class="sliderLabel" title="Volume">
+<button aria-label="Volume down" class="iconBtn small" id="btnVolDown" title="Volume down">
+<svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M5 12h14"></path></svg>
+</button>
+<input id="vol" max="1" min="0" step="0.01" type="range" value="1"/>
+<button aria-label="Volume up" class="iconBtn small" id="btnVolUp" title="Volume up">
+<svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+</button>
+</span>
+<button aria-label="Picture-in-Picture" class="iconBtn small" id="btnPiP" title="Picture-in-Picture"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><rect height="14" rx="2" width="18" x="3" y="5"></rect><rect height="6" rx="1" width="7" x="13" y="11"></rect></svg></span></button>
+<button aria-label="Fullscreen" class="iconBtn small" id="btnFullscreen" title="Fullscreen (F)"><span aria-hidden="true"><svg aria-hidden="true" class="ico stroke" viewbox="0 0 24 24"><path d="M9 3H3v6"></path><path d="M15 3h6v6"></path><path d="M9 21H3v-6"></path><path d="M15 21h6v-6"></path></svg></span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section><section class="card hotkeysCard">
+<div class="hd">
+<div class="title"><b>Hotkeys</b></div>
+</div>
+<div class="bd">
+<div class="hint">
+<span class="kbd">Space</span> Play/Pause •
+          <span class="kbd">←</span>/<span class="kbd">→</span> seek 5s •
+          <span class="kbd">Shift</span>+<span class="kbd">←</span>/<span class="kbd">→</span> seek 15s •
+          <span class="kbd">↑</span>/<span class="kbd">↓</span> volume •
+          <span class="kbd">,</span>/<span class="kbd">.</span> frame step •
+          <span class="kbd">F</span> fullscreen •
+          <span class="kbd">M</span> mute
+      </div>
+</div>
+<!-- RIGHT: Room + settings -->
+</section></div><div class="rightCol">
+<aside class="card">
+<div class="bd">
+<!-- Chat (top) -->
+<b id="chatTitle" style="font-size:13px">Chat</b>
+<div aria-live="polite" class="log" id="log"></div>
+<div class="chat">
+<input id="chatMsg" placeholder="Say something…" type="text"/>
+<button class="primary" id="btnSend">Send</button>
+</div>
+<div class="hr"></div>
+<!-- Identity + theme (below chat) -->
+<div class="kv compact">
+<label for="displayName">Display Name</label>
+<input id="displayName" maxlength="30" placeholder="e.g., Alex" type="text"/>
+</div>
+<div class="kv compact hostOnly" id="roomNameRow">
+<label for="roomName">Room Name</label>
+<input id="roomName" maxlength="30" placeholder="e.g., Movie Night" type="text">
+</input></div>
+<div class="grid2">
+<div style="grid-column:1/-1;">
+<div class="kv compact" style="grid-template-columns: 130px 1fr">
+<label for="themeSel">Theme</label>
+<select aria-hidden="true" class="nativeSelect" id="themeSel" tabindex="-1">
+<option value="mono" selected>Mono</option>
+<option value="midnight">Midnight</option>
+<option value="solar">Forest</option>
+<option value="candy">Candy</option>
+<option value="ember">Ember</option>
+<option value="crimson">Crimson</option>
+</select>
+<div class="pwSelect" id="themePicker">
+<button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="themeBtn" type="button">
+<span id="themeBtnLabel">Theme</span>
+<span aria-hidden="true" class="pwCaret">▾</span>
+</button>
+<div aria-label="Theme options" class="pwSelectMenu" id="themeMenu" role="listbox"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="hr"></div>
+<div class="peopleRow">
+<b style="font-size:13px">People:</b>
+<div class="members" id="members"></div>
+</div>
+<div class="hr"></div>
+<!-- Subtitles (customize look) -->
+<details id="subsDetails">
+<summary style="cursor:pointer; color: var(--muted);">Subtitles</summary>
+<div class="subsSection" style="margin-top:12px; display:flex; flex-direction:column; gap:12px">
+<!-- Style (2-column when roomy, stacked on small) -->
+<div class="grid2 subsGrid" style="gap:12px">
+<div class="kv" style="grid-column:1/-1;">
+<label>Font</label>
+<div>
+<select aria-hidden="true" class="nativeSelect" id="subsFontSelect" tabindex="-1">
+<option value="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
+<option value="Arial, Helvetica, sans-serif">Arial</option>
+<option value="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">Inter</option>
+<option value="Verdana, Geneva, sans-serif">Verdana</option>
+<option value="Tahoma, Geneva, sans-serif">Tahoma</option>
+<option value="Georgia, serif">Georgia</option>
+<option value="Times New Roman, Times, serif">Times</option>
+<option value="Trebuchet MS, sans-serif">Trebuchet</option>
+<option value="Courier New, Courier, monospace">Courier</option>
+<option value="custom">Custom…</option>
+</select>
+<div class="pwSelect" id="subsFontPicker">
+<button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="subsFontBtn" type="button">
+<span id="subsFontBtnLabel">Font</span>
+<span aria-hidden="true" class="pwCaret">▾</span>
+</button>
+<div aria-label="Font options" class="pwSelectMenu" id="subsFontMenu" role="listbox"></div>
+</div>
+<input id="subsFontCustom" placeholder="Custom font-family (e.g. 'Bebas Neue', Arial)" style="margin-top:8px; display:none" type="text"/>
+</div>
+</div>
+<div class="kv" style="grid-column:1/-1;">
+<label>Font Size/Color</label>
+<div class="row" style="gap:10px; flex-wrap:nowrap; align-items:center">
+<input id="subsFontSize" max="15" min="0.5" step="0.1" type="number"/>
+<input id="subsColor" type="color"/>
+<input id="subsColorText" placeholder="#ffffff" style="max-width:140px" type="text"/>
+</div>
+</div>
+<div class="kv" style="grid-column:1/-1;">
+<label>Style</label>
+<div class="row" style="gap:16px; flex-wrap:nowrap; justify-content:flex-start; overflow-x:auto; padding-bottom:2px">
+<label class="chk"><input id="subsBold" type="checkbox"/> <span>Bold</span></label>
+<label class="chk"><input id="subsItalic" type="checkbox"/> <span>Italic</span></label>
+<label class="chk"><input id="subsUnderline" type="checkbox"/> <span>Underline</span></label>
+</div>
+</div>
+<div class="kv" style="grid-column:1/-1;">
+<label>Outline</label>
+<div class="row" style="gap:10px; flex-wrap:nowrap; align-items:center">
+<input id="subsOutlineColor" type="color"/>
+<input id="subsOutlineThick" max="20" min="0" step="0.5" style="max-width:110px" type="number"/>
+</div>
+</div>
+<div class="kv" style="grid-column:1/-1;">
+<label>Drop Shadow</label>
+<div class="row" style="gap:10px; flex-wrap:nowrap; align-items:center">
+<input id="subsShadowColor" type="color"/>
+<input id="subsShadowThick" max="30" min="0" step="0.5" style="max-width:110px" type="number"/>
+</div>
+</div>
+<div class="kv">
+<label>Subtitle opacity (%)</label>
+<input id="subsOpacity" max="100" min="0" step="1" style="max-width:110px; justify-self:start;" type="number"/>
+</div>
+<div class="kv">
+<label>BG Opacity (%)</label>
+<input id="subsBgOpacity" max="100" min="0" step="1" style="max-width:110px; justify-self:start;" type="number"/>
+</div>
+<div class="kv" style="grid-column:1/-1;">
+<label>Bottom Position</label>
+<input id="subsBottom" max="45" min="0" step="0.5" style="max-width:110px; justify-self:start;" type="number"/>
+</div>
+</div>
+<!-- Track selection + timing (moved to bottom) -->
+<div class="kv" style="grid-template-columns: 130px 1fr;">
+<label>Active Sub</label>
+<div>
+<select aria-hidden="true" class="nativeSelect" id="subsTrackSel" tabindex="-1"></select>
+<div class="pwSelect" id="subsTrackPicker">
+<button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="subsTrackBtn" type="button">
+<span id="subsTrackBtnLabel">No subtitles</span>
+<span aria-hidden="true" class="pwCaret">▾</span>
+</button>
+<div aria-label="Subtitle track options" class="pwSelectMenu" id="subsTrackMenu" role="listbox"></div>
+</div>
+</div>
+</div>
+<div class="kv" style="grid-template-columns: 130px 1fr;">
+<label>
+              Offset 
+              <span id="subsOffsetLabel" style="font-family:var(--mono)">0ms</span>
+</label>
+<div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+<button class="small" id="btnSubsAdvance1000" title="Show subtitles 1000ms earlier">-1000</button>
+<button class="small" id="btnSubsAdvance100" title="Show subtitles 100ms earlier">-100</button>
+<button class="small" id="btnSubsOffsetReset" title="Reset timing offset">Reset</button>
+<button class="small" id="btnSubsDelay100" title="Delay subtitles by 100ms">+100</button>
+<button class="small" id="btnSubsDelay1000" title="Delay subtitles by 1000ms">+1000</button>
+</div>
+</div>
+<div class="row" style="gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between">
+<div class="row" style="gap:10px; flex-wrap:wrap; align-items:center">
+<button id="btnLoadVtt">Load subs</button>
+<button id="btnToggleSubs">Off</button>
+</div>
+<div class="row" style="gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end">
+<button id="btnSubsReset">Reset all</button>
+<button class="primary" id="btnSubsApply">Apply</button>
+</div>
+</div>
+<div class="mini" style="color:var(--muted); margin-top:6px">
+            Host-loaded tracks are shared to connected viewers. Add multiple tracks; each viewer chooses what to display from the dropdown.
+          </div>
+</div>
+</details>
+<div class="hr"></div>
+<!-- Player -->
+<details id="playerDetails">
+<summary style="cursor:pointer; color: var(--muted);">Room</summary>
+<div style="margin-top:12px; display:flex; flex-direction:column; gap:12px">
+<div class="row" style="gap:10px; flex-wrap:wrap">
+<button class="hostOnly" id="btnLoad">Load video</button>
+<button class="hostOnly" id="btnLoadAudio">Load audio</button>
+<button id="btnSnapshot">Snapshot</button>
+<button id="btnStats">Stats</button>
+<button class="hostOnly" id="btnSync">Sync</button>
+</div>
+<div class="hr" style="margin:2px 0"></div>
+<b style="font-size:13px">Playback</b>
+<div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
+<label>Playback rate</label>
+<div class="row" style="gap:10px; align-items:center; flex-wrap:nowrap">
+<button class="small" id="btnRateDown2" title="Slow down">−</button>
+<span class="ratePill" id="rateLabel2">1.00×</span>
+<button class="small" id="btnRateUp2" title="Speed up">+</button>
+</div>
+</div>
+<div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
+<label>UI scale</label>
+<div class="row" style="gap:10px; align-items:center; flex-wrap:nowrap">
+<input id="uiScale" max="160" min="70" step="1" style="flex:1; min-width:160px" type="range" value="100"/>
+<span class="ratePill" id="uiScaleLabel">100%</span>
+</div>
+</div>
+<div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
+<label>Video Messages</label>
+<label class="chk"><input checked="" id="videoMsgsToggle" type="checkbox"> <span>Show chat messages on video</span></input></label>
+</div>
+<div class="kv" style="grid-template-columns: 130px 1fr; margin:6px 0 0">
+<label>Audio Source</label>
+<div class="row" style="gap:10px; flex-wrap:wrap; align-items:center">
+<select id="audioSourceSelect" style="min-width:240px; flex:1 1 240px;">
+<option value="video">Video</option>
+<option value="external">Loaded audio</option>
+</select>
+</div>
+</div>
+<div class="mini" style="margin-top:2px; color: var(--muted); line-height:1.35">
+            Host controls sync playback; viewers can adjust UI scale locally.
+            Scales the on-video controls (windowed + fullscreen).
+          </div>
+</div>
+</details>
+<div class="hr"></div>
+<details>
+<summary style="cursor:pointer; color: var(--muted);">Connection</summary>
+<div class="kv compact" style="margin-top:12px">
+<label>Current Room</label>
+<div class="row connRow">
+<input id="roomCode" inputmode="numeric" maxlength="8" pattern="[0-9 ]*" placeholder="--------" readonly="" type="text"/>
+<button class="small" id="btnNewRoom" title="Generate a new room number">New Room</button>
+</div>
+</div>
+<div class="kv compact" style="margin-top:10px">
+<label for="joinRoomInput"></label>
+<div class="row connRow">
+<input id="joinRoomInput" inputmode="numeric" maxlength="9" pattern="[0-9 ]*" placeholder="1234 5678" type="text"/>
+<button class="small" id="btnJoinRoom" title="Join as Viewer">Join Room</button>
+</div>
+</div>
+</details>
+<div class="hr"></div>
+</div>
+</aside>
+</div></main>
+<div class="toast" id="toast"></div>
+<input accept="video/*" hidden="" id="filePick" type="file"/>
+<input accept="audio/*" hidden="" id="audioPick" type="file"/>
+<input accept="text/vtt,.vtt,.srt,text/srt,application/x-subrip" hidden="" id="vttPick" type="file"/>
+<script defer="" src="./polyfills.js"></script>
+
+<script src="/ffmpeg/814.ffmpeg.js"></script>
+<script defer="" src="./app.js"></script>
+</body>
+</html>
