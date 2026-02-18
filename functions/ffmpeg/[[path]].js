@@ -46,6 +46,8 @@ export async function onRequest(context) {
   const headers = new Headers();
   headers.set("Content-Type", contentTypeFromKey(key));
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  // Required for COEP pages so this asset can be embedded/loaded
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
 
   if (obj.httpEtag) headers.set("ETag", obj.httpEtag);
   const inm = request.headers.get("If-None-Match");
