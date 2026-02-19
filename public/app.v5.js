@@ -88,12 +88,29 @@ let wt=null,vt=null;const bt="peerwatch_session_v2",St="peerwatch_clientId",kt=(
 
     if("welcome"===t.type){
       At=t.hostId||At;
+      try{ if(t.role){ nt = t.role; window.nt=nt; App.state.role=nt; } else if(At===kt){ nt="host"; window.nt=nt; App.state.role=nt; } }catch{}
       "viewer"===nt&&At&&(wt=At);
       i(`Joined room ${It}`,"sys");
       Lt(kt,d(Te?.value||localStorage.getItem(xt)||"",30)||("host"===nt?"Host":"Viewer"));
+      try{document.body.classList.toggle("isHost","host"===nt);}catch{}
+      try{Kr();}catch{}
       _t(t);
       return;
     }
+
+    if("host-granted"===t.type){
+      try{At=t.hostId||At;}catch{}
+      try{nn("host");}catch{}
+      return;
+    }
+
+    if("host-denied"===t.type){
+      try{At=t.hostId||At;}catch{}
+      try{l("Host already taken");}catch{}
+      try{Kr();}catch{}
+      return;
+    }
+
 
     if("peerlist"===t.type){_t(t);return;}
 
@@ -302,7 +319,7 @@ function rn(e){_.style.display=e?"flex":"none"}function on(e){try{K.style.displa
   console.error(err);
   try{i("Video load failed: "+(err?.message||err),"err")}catch{}
   l("Video load failed");
-}}function cn(){return Pt.replace(/^ws/i,"http")}a(Q,"click",()=>{try{l("Current role: "+(nt==="host"?"Host":"Viewer"))}catch{}}),a(S,'click',()=>{if(nt==='viewer'){try{if(S.muted){S.muted=false;App.audio.viewerUnmuted=true;try{localStorage.setItem('peerwatch_viewerUnmuted','1')}catch{};l('Unmuted');}__pwSafePlay(S);}catch{}}}),a(U,"dragover",e=>{e.preventDefault(),U.style.outline="2px solid rgba(255,255,255,.35)"}),a(U,"dragleave",()=>{U.style.outline="none"}),a(U,"drop",async e=>{e.preventDefault(),U.style.outline="none";const t=[...e.dataTransfer?.files||[]];if(!t.length)return;const n=t.find(e=>{const t=(e.name||"").toLowerCase();return t.endsWith(".vtt")||t.endsWith(".srt")}),r=t.find(e=>(e.type||"").startsWith("video/"));if(n&&await Jn(n),r){if("host"!==nt)return void l("Only host can load the video");await sn(r)}}),a(K,"click",()=>{"host"===nt&&Xe?.click()}),a(Re,"click",()=>{"host"===nt?Xe?.click():l("Only host can load the video")}),a(Oe,"click",()=>{"host"===nt?Ue?.click():l("Only host can load audio")}),a(U,"dblclick",e=>{0===e.button&&ke?.click()}),a(Xe,"change",async()=>{const e=Xe.files?.[0];if(e)return"host"!==nt?l("Only host can load video"):void await sn(e)}),a(Ue,"change",async()=>{const e=Ue.files?.[0];if(!e)return;if("host"!==nt)return l("Only host can load audio");if(!_e)return void i("Audio element missing.","err");const t=URL.createObjectURL(e);_e.src=t;try{_e.load()}catch{}try{_e.currentTime=S.currentTime||0}catch{}try{_e.playbackRate=S.playbackRate||1}catch{}try{_e.volume=S.volume}catch{}try{_e.muted=S.muted}catch{}_e.captureStream?at=_e.captureStream():(i("Your browser does not support audio.captureStream(); external audio will be local-only.","warn"),at=null),l("Audio loaded"),i(`Loaded audio: ${e.name}`,"sys"),he&&(he.value="external"),ct="external",Xr(),eo(),"host"===nt&&Br({type:"audioSrc",mode:ct})});/* (removed) MSE/HLS/FFmpeg pipeline stripped for pure WebRTC canvas streaming */function eo(){st=function(){if(!ot)return null;const e=new MediaStream,t=ot.getVideoTracks?.()[0];t&&e.addTrack(t);let n=null;return"external"===ct&&at&&(n=at.getAudioTracks?.()[0]||null),n||(n=ot.getAudioTracks?.()[0]||null),n&&e.addTrack(n),e}(),rt=st;for(const{pc:e}of gt.values())to(e)}function to(e){
+}}function cn(){return Pt.replace(/^ws/i,"http")}a(Q,"click",()=>{try{if(nt==="host"){l("Current role: Host");return;} l("Requesting Host…"); try{Ct&&Ot({type:"request-host",roomId:It,clientId:kt});}catch{}}catch{}}),a(S,'click',()=>{if(nt==='viewer'){try{if(S.muted){S.muted=false;App.audio.viewerUnmuted=true;try{localStorage.setItem('peerwatch_viewerUnmuted','1')}catch{};l('Unmuted');}__pwSafePlay(S);}catch{}}}),a(U,"dragover",e=>{e.preventDefault(),U.style.outline="2px solid rgba(255,255,255,.35)"}),a(U,"dragleave",()=>{U.style.outline="none"}),a(U,"drop",async e=>{e.preventDefault(),U.style.outline="none";const t=[...e.dataTransfer?.files||[]];if(!t.length)return;const n=t.find(e=>{const t=(e.name||"").toLowerCase();return t.endsWith(".vtt")||t.endsWith(".srt")}),r=t.find(e=>(e.type||"").startsWith("video/"));if(n&&await Jn(n),r){if("host"!==nt)return void l("Only host can load the video");await sn(r)}}),a(K,"click",()=>{"host"===nt&&Xe?.click()}),a(Re,"click",()=>{"host"===nt?Xe?.click():l("Only host can load the video")}),a(Oe,"click",()=>{"host"===nt?Ue?.click():l("Only host can load audio")}),a(U,"dblclick",e=>{0===e.button&&ke?.click()}),a(Xe,"change",async()=>{const e=Xe.files?.[0];if(e)return"host"!==nt?l("Only host can load video"):void await sn(e)}),a(Ue,"change",async()=>{const e=Ue.files?.[0];if(!e)return;if("host"!==nt)return l("Only host can load audio");if(!_e)return void i("Audio element missing.","err");const t=URL.createObjectURL(e);_e.src=t;try{_e.load()}catch{}try{_e.currentTime=S.currentTime||0}catch{}try{_e.playbackRate=S.playbackRate||1}catch{}try{_e.volume=S.volume}catch{}try{_e.muted=S.muted}catch{}_e.captureStream?at=_e.captureStream():(i("Your browser does not support audio.captureStream(); external audio will be local-only.","warn"),at=null),l("Audio loaded"),i(`Loaded audio: ${e.name}`,"sys"),he&&(he.value="external"),ct="external",Xr(),eo(),"host"===nt&&Br({type:"audioSrc",mode:ct})});/* (removed) MSE/HLS/FFmpeg pipeline stripped for pure WebRTC canvas streaming */function eo(){st=function(){if(!ot)return null;const e=new MediaStream,t=ot.getVideoTracks?.()[0];t&&e.addTrack(t);let n=null;return"external"===ct&&at&&(n=at.getAudioTracks?.()[0]||null),n||(n=ot.getAudioTracks?.()[0]||null),n&&e.addTrack(n),e}(),rt=st;for(const{pc:e}of gt.values())to(e)}function to(e){
   if(!rt) return;
   let peer=null;
   for(const n of gt.values()) if(n?.pc===e){ peer=n; break; }
@@ -419,10 +436,21 @@ function __pwEnsureCanvas(){
 }
 function __pwStartDrawLoop(){
   if(__pwCanvasTimer) return;
-  const draw = ()=>{
+  let lastTs = 0;
+  const draw = (ts)=>{
     if(!__pwStreamIsLive) return;
+    const fps = Number(__pwHostStreamSettings?.fps||0)||0;
+    const minDt = fps>0 ? (1000/fps) : 0;
+
+    // Throttle draw work (especially important on Android hosts).
+    if(minDt && lastTs && (ts - lastTs) < (minDt - 1)){
+      requestAnimationFrame(draw);
+      return;
+    }
+    lastTs = ts || performance.now();
+
     const c = __pwEnsureCanvas();
-    if(!c || !__pwCanvasCtx) return;
+    if(!c || !__pwCanvasCtx) { requestAnimationFrame(draw); return; }
     try{ __pwCanvasCtx.drawImage(S, 0, 0, c.width, c.height); }catch{}
     requestAnimationFrame(draw);
   };

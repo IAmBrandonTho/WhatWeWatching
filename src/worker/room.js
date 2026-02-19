@@ -119,7 +119,11 @@ const pair = new WebSocketPair();
         const proposedId = sanitizeClientId(msg.clientId);
         if (proposedId) clientId = proposedId;
 
-        role = msg.role === "host" ? "host" : "viewer";
+        // "First host wins" arbitration: only grant host if no active host, or if reclaiming the same host id.
+        const wantsHost = msg.role === "host";
+        const existingHost = this.hostId;
+        const canGrantHost = wantsHost && (!existingHost || existingHost === clientId || !this.sessions.has(existingHost));
+        role = canGrantHost ? "host" : "viewer";
         name = clampName(msg.name, role === "host" ? "Host" : "Viewer");
 
         // If a client reconnects with the same id, close the previous connection.
@@ -130,8 +134,14 @@ const pair = new WebSocketPair();
 
         if (role === "host") this.hostId = clientId;
 
+
+        // If client asked for host but another host already exists, let them know.
+        if (wantsHost && role !== "host" && this.hostId) {
+          this._sendTo(clientId, { type: "host-denied", roomId, hostId: this.hostId, reason: "host-taken" });
+        }
+
         // Welcome reply to the connecting client.
-        this._sendTo(clientId, { type: "welcome", roomId, hostId: this.hostId });
+        this._sendTo(clientId, { type: "welcome", roomId, hostId: this.hostId, role });
 
         // Keep everyone in sync.
         this._broadcast({ type: "peerlist", roomId, hostId: this.hostId, peers: this._peerlist() });
@@ -163,6 +173,25 @@ const pair = new WebSocketPair();
         if (clientId === this.hostId) {
           this.roomName = clampName(msg.name, "Room");
           this._broadcast({ type: "room", roomId, name: this.roomName });
+        }
+        return;
+      }
+
+      // Request host role (first-come, first-served).
+      if (msg.type === "request-host") {
+        const existingHost = this.hostId;
+        const canGrant = !existingHost || existingHost === clientId || !this.sessions.has(existingHost);
+        if (canGrant) {
+          this.hostId = clientId;
+          const s = this.sessions.get(clientId) || { ws: server, role: "viewer", name: "Viewer" };
+          s.role = "host";
+          s.name = clampName(s.name, "Host");
+          this.sessions.set(clientId, s);
+
+          this._sendTo(clientId, { type: "host-granted", roomId, hostId: this.hostId });
+          this._broadcast({ type: "peerlist", roomId, hostId: this.hostId, peers: this._peerlist() });
+        } else {
+          this._sendTo(clientId, { type: "host-denied", roomId, hostId: existingHost, reason: "host-taken" });
         }
         return;
       }
