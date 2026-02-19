@@ -405,12 +405,25 @@ try{const vub=document.getElementById("btnViewerUnmute");if(vub){vub.addEventLis
 const e=Mt(function(){const e=new URL(location.href);let t="";if(e.hash&&e.hash.includes("room=")){const n=e.hash.match(/room=([^&]+)/);t=n?decodeURIComponent(n[1]):""}return t||(t=e.searchParams.get("room")||""),t=d(t,64).replace(/[^a-zA-Z0-9_-]/g,""),t}());e?(oo(e),tn(!1,"Connecting…"),Ut("viewer",e)):(oo(""),tn(!1,"Not connected"),nn("viewer")),Xt(""),i("Ready. Drop a video to start hosting, or open a share link to join instantly.","sys")}catch(e){console.error(e);try{i("Init failed: "+(e?.message||e),"err")}catch{}l("Init failed (see console/log)")}
 /* --- Canvas WebRTC Streaming controls --- */
 function __pwGetStreamSettings(){
+  // Prefer the last applied host settings (authoritative), fall back to UI.
+  try{
+    if(typeof __pwHostStreamSettings === "object" && __pwHostStreamSettings){
+      const ss = __pwHostStreamSettings;
+      return {
+        type: String(ss.type||"p2p"),
+        res: String(ss.res||"auto"),
+        fps: String(ss.fps||"auto"),
+        bitrate: String(ss.bitrate||"auto"),
+        hint: String(ss.hint||"auto"),
+      };
+    }
+  }catch{}
   const type = (document.getElementById("streamTypeSel")?.value||"p2p");
   const res = (document.getElementById("streamResSel")?.value||"auto");
   const fps = (document.getElementById("streamFpsSel")?.value||"auto");
-  const br  = (document.getElementById("streamBitrateSel")?.value||"auto");
+  const bitrate  = (document.getElementById("streamBitrateSel")?.value||"auto");
   const hint= (document.getElementById("streamHintSel")?.value||"auto");
-  return {type,res,fps,br,hint};
+  return {type,res,fps,bitrate,hint};
 }
 function __pwComputeTargetWH(){
   const vw = Number(S.videoWidth||0), vh = Number(S.videoHeight||0);
@@ -477,7 +490,7 @@ function __pwComputeTargetDims(srcW,srcH,resVal){
 function __pwBuildOutgoingStream(){
   const c = __pwEnsureCanvas();
   if(!c) throw new Error("Canvas not ready (load a video first).");
-  const {fps, br, hint} = __pwGetStreamSettings();
+  const {fps, bitrate, hint} = __pwGetStreamSettings();
   const fpsNum = Number(fps);
   const useFps = Number.isFinite(fpsNum) && fpsNum>0 ? fpsNum : null;
   const cs = useFps ? c.captureStream(useFps) : c.captureStream();
@@ -485,8 +498,8 @@ function __pwBuildOutgoingStream(){
   if(vTrack){
     try{
       if(hint && hint!=="auto") vTrack.contentHint = hint;
-      if(br!=="auto"){
-        const b = Number(br);
+      if(bitrate!=="auto"){
+        const b = Number(bitrate);
         vTrack.__pwMaxBitrate = (Number.isFinite(b)&&b>0)?b:null;
       }else vTrack.__pwMaxBitrate = null;
     }catch{}
@@ -573,7 +586,7 @@ function __pwWireStartButton(){
           }
         }catch{}
         b.classList.add("on");
-        b.textContent = "Stop";
+        b.textContent = "End";
       }catch(err){
         i("Start stream failed: "+(err?.message||err),"err");
         l("Start failed");
@@ -621,7 +634,117 @@ function __pwSetStreamUIFromSettings(s){
 function __pwResetStreamSettingsUI(){
   __pwSetStreamUIFromSettings(__pwDefaultStreamSettings);
 }
-async function __pwApplyStreamSettings(){if(nt!=='host'){ l('Only host can apply stream settings'); return; }const s=__pwGetStreamSettingsFromUI();__pwHostStreamSettings=Object.assign({},s);try{ Br({type:'streamSettings',settings:__pwHostStreamSettings}); }catch{};if(!__pwStreamIsLive){ l('Stream settings applied'); return; }try{ for(const p of gt.values()){ try{ applyStreamSenderPrefs(p.pc,__pwHostStreamSettings); }catch{} } }catch{};l('Stream settings applied');}
+
+function applyStreamSenderPrefs(pc, settings){
+  try{
+    if(!pc || !pc.getSenders) return;
+    const s = settings || __pwHostStreamSettings || {};
+    const br = String(s.bitrate||"auto");
+    const fps = String(s.fps||"auto");
+    const hint = String(s.hint||"auto");
+    let maxBitrate = null;
+    if(br !== "auto"){
+      const b = Number(br);
+      if(Number.isFinite(b) && b>0) maxBitrate = b;
+    }
+    let maxFr = null;
+    if(fps !== "auto"){
+      const f = Number(fps);
+      if(Number.isFinite(f) && f>0) maxFr = f;
+    }
+    const senders = pc.getSenders() || [];
+    for(const snd of senders){
+      if(!snd || !snd.track) continue;
+      if(snd.track.kind !== "video") continue;
+
+      try{
+        if(hint && hint !== "auto") snd.track.contentHint = hint;
+      }catch{}
+
+      try{
+        const p = snd.getParameters ? snd.getParameters() : null;
+        if(!p) continue;
+        p.encodings = (p.encodings && p.encodings.length) ? p.encodings : [{}];
+
+        if(maxBitrate) p.encodings[0].maxBitrate = maxBitrate;
+        else if(p.encodings[0].maxBitrate) delete p.encodings[0].maxBitrate;
+
+        if(maxFr) p.encodings[0].maxFramerate = maxFr;
+        else if(p.encodings[0].maxFramerate) delete p.encodings[0].maxFramerate;
+
+        if(!p.degradationPreference || p.degradationPreference === "balanced"){
+          if(hint === "motion") p.degradationPreference = "maintain-framerate";
+          else if(hint === "detail") p.degradationPreference = "maintain-resolution";
+        }
+        snd.setParameters(p).catch(()=>{});
+      }catch{}
+    }
+  }catch{}
+}
+
+async function __pwRebuildAndReplaceOutgoingTracks(){
+  try{
+    try{ __pwCanvasStream?.getTracks?.().forEach(t=>{try{t.stop()}catch{}}); }catch{}
+    // Do NOT stop audio track if it's from the <video> captureStream; but if present in __pwOutStream, let replaceTrack swap it.
+    try{ __pwOutStream?.getTracks?.().forEach(t=>{try{t.stop()}catch{}}); }catch{}
+  }catch{}
+  const out = __pwBuildOutgoingStream();
+  rt = out;
+  const vTrack = out.getVideoTracks?.()[0] || null;
+  const aTrack = out.getAudioTracks?.()[0] || null;
+
+  for(const peer of gt.values()){
+    const pc = peer?.pc;
+    if(!pc || !pc.getSenders) continue;
+    const senders = pc.getSenders() || [];
+    for(const snd of senders){
+      if(!snd) continue;
+      try{
+        if(snd.track?.kind === "video" && vTrack) await snd.replaceTrack(vTrack);
+        if(snd.track?.kind === "audio" && aTrack) await snd.replaceTrack(aTrack);
+      }catch{}
+    }
+    try{ applyStreamSenderPrefs(pc, __pwHostStreamSettings); }catch{}
+  }
+  // Best-effort keyframe request (supported in some Chromium builds).
+  try{
+    for(const peer of gt.values()){
+      const pc = peer?.pc;
+      const senders = pc?.getSenders?.()||[];
+      for(const snd of senders){
+        if(snd?.track?.kind==="video" && typeof snd.generateKeyFrame==="function"){
+          snd.generateKeyFrame().catch(()=>{});
+        }
+      }
+    }
+  }catch{}
+}
+
+async function __pwApplyStreamSettings(){
+  if(nt!=='host'){ l('Only host can apply stream settings'); return; }
+  const prev = Object.assign({}, __pwHostStreamSettings||__pwDefaultStreamSettings);
+  const sUI=__pwGetStreamSettingsFromUI();
+  __pwHostStreamSettings=Object.assign({},sUI);
+  try{ __pwSetStreamUIFromSettings(__pwHostStreamSettings); }catch{}
+  try{ Br({type:'streamSettings',settings:__pwHostStreamSettings}); }catch{}
+  if(!__pwStreamIsLive){
+    l('Stream settings applied');
+    return;
+  }
+  const resChanged = String(prev.res||"auto") !== String(__pwHostStreamSettings.res||"auto");
+  const fpsChanged = String(prev.fps||"auto") !== String(__pwHostStreamSettings.fps||"auto");
+
+  try{
+    if(resChanged || fpsChanged){
+      await __pwRebuildAndReplaceOutgoingTracks();
+    }else{
+      for(const p of gt.values()){
+        try{ applyStreamSenderPrefs(p.pc,__pwHostStreamSettings); }catch{}
+      }
+    }
+  }catch{}
+  l('Stream settings applied');
+}
 function __pwWireStreamApplyReset(){
   const applyBtn=document.getElementById("btnStreamApply");
   const resetBtn=document.getElementById("btnStreamReset");
