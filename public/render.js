@@ -21,5 +21,6 @@ export function render(state){
 }
 
 export function updateTimelineTick(state){
-  updateTimelineUI(state);
+  // Timeline UI temporarily disabled to prevent runtime crash
+  // (updateTimelineUI was undefined)
 }
