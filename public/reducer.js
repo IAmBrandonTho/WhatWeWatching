@@ -1,8 +1,6 @@
 export function reducer(state, action){
-  switch(action.type){
 
-    case "CONNECTING":
-      state.connection="connecting"; return;
+  switch(action.type){
 
     case "CONNECTED":
       state.connection="connected"; return;
@@ -33,6 +31,10 @@ export function reducer(state, action){
         paused:action.paused,
         receivedAt:performance.now()
       };
+      return;
+
+    case "APPLY_SETTINGS":
+      state.ui.qualityDraft = {};
       return;
   }
 }
