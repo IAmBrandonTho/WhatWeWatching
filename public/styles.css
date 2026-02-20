@@ -1039,12 +1039,7 @@ video{
   object-fit:contain;
 }
 
-/* Center containers */
-.video-container, main, .player{
-  display:flex;
-  justify-content:center;
-  align-items:center;
-}
+
 
 /* Fullscreen pure video */
 :fullscreen video{
@@ -1059,4 +1054,19 @@ video{
 :fullscreen .panels,
 :fullscreen .status-pill{
   display:none !important;
+}
+
+
+/* --- SAFE video centering (does not break layout) --- */
+.video-container {
+  display: grid;
+  place-items: center;
+}
+
+/* Ensure fullscreen hidden UI does not capture clicks */
+:fullscreen .ui,
+:fullscreen .panels,
+:fullscreen .status-pill {
+  display: none !important;
+  pointer-events: none !important;
 }
