@@ -1,4 +1,3 @@
-import "./toast.js";
 import { initUIBindings } from "./uiBindings.js";
 import { startNetworking } from "./networking.js";
 
