@@ -17,9 +17,7 @@ export function render(state){
     }
   }
 
-  if(!rafId){
-    rafId=requestAnimationFrame(timelineLoop);
-  }
+  
 }
 
 export function updateTimelineTick(state){
