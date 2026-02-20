@@ -9,9 +9,3 @@ export function dispatch(action){
     requestAnimationFrame(()=>updateTimelineTick(AppState));
   }
 }
-
-// Bridge UI events into state actions
-document.addEventListener("ui:action", (e) => {
-  if (!e.detail || !e.detail.type) return;
-  dispatch({ type: e.detail.type });
-});

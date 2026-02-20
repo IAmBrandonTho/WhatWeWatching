@@ -1058,16 +1058,3 @@ video{
 #pwControls {
   pointer-events: auto !important;
 }
-
-
- /* --- HARD INTERACTION FIX (ensure controls receive clicks) --- */
- button,
- .pwSelectBtn,
- .pwSelectMenu,
- .pwSelectOpt,
- input,
- select {
-   position: relative;
-   z-index: 9999;
-   pointer-events: auto !important;
- }

@@ -17,18 +17,36 @@ export function render(state){
     }
   }
 
-    // Playback control (local-only, state-driven)
-    if(video && state.video.hasStream){
-      if(state.timeline.paused){
-        if(!video.paused) video.pause();
-      }else{
-        video.play().catch(()=>{});
-      }
-    }
-
+  
 }
 
 export function updateTimelineTick(state){
-  // Timeline UI temporarily disabled to prevent runtime crash
-  // (updateTimelineUI was undefined)
+  updateTimelineUI(state);
+}
+
+
+function updateTimelineUI(state){
+  const cur=document.getElementById("timeCur");
+  const dur=document.getElementById("timeDur");
+  if(!cur || !dur) return;
+
+  const tl=state.timeline;
+  if(!tl || !tl.duration) return;
+
+  let display=tl.hostTime||0;
+
+  if(!tl.paused){
+    const delta=(performance.now()-tl.receivedAt)/1000;
+    display += delta;
+  }
+
+  const fmt=(s)=>{
+    s=Math.max(0,Math.floor(s));
+    const m=Math.floor(s/60);
+    const ss=String(s%60).padStart(2,"0");
+    return `${m}:${ss}`;
+  };
+
+  cur.textContent = fmt(display);
+  dur.textContent = fmt(tl.duration);
 }
