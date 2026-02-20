@@ -17,7 +17,15 @@ export function render(state){
     }
   }
 
-  
+    // Playback control (local-only, state-driven)
+    if(video && state.video.hasStream){
+      if(state.timeline.paused){
+        if(!video.paused) video.pause();
+      }else{
+        video.play().catch(()=>{});
+      }
+    }
+
 }
 
 export function updateTimelineTick(state){

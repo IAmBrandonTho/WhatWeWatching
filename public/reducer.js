@@ -26,6 +26,11 @@ export function reducer(state, action){
       state.video.stream=null;
       return;
 
+    
+    case "VIDEO_TOGGLE":
+      state.timeline.paused = !state.timeline.paused;
+      return;
+
     case "TIMELINE_UPDATE":
       state.timeline={
         hostTime:action.t,
