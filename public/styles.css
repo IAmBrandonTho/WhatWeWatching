@@ -447,15 +447,7 @@ select option:hover{
       transform-origin: center bottom;
     }
 
-    .isFullscreen #pwControls{
-      position:absolute;
-      left:16px; right:16px; bottom:16px;
-      z-index:60;
-      opacity:0;
-      pointer-events:none;
-      transform: translateY(10px) scale(var(--uiScale,1));
-      transition:opacity .18s ease, transform .18s ease;
-    }
+    
     .isFullscreen #pwControls.show{
       opacity:1;
       pointer-events:auto;
@@ -1059,4 +1051,10 @@ video{
 :fullscreen .settings,
 :fullscreen .panels {
   display: none !important;
+}
+
+
+/* --- Ensure controls remain interactive --- */
+#pwControls {
+  pointer-events: auto !important;
 }
