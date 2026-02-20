@@ -1022,32 +1022,96 @@ video:fullscreen, video:-webkit-full-screen{
   .ctl-volbar{display:none !important;}
 }
 
-
-/* Patch: Start/End button sizing + centering */
-#btnStartStream{display:inline-flex;align-items:center;justify-content:center;min-width:72px;}
-
-
-
-body[data-connection="reconnecting"] button,
-body[data-connection="connecting"] button{
-  pointer-events:none;
-  opacity:.6;
-}
-
-.connection-pill{
-  display:inline-flex;
-  width:max-content;
-  padding-inline:6px;
-  gap:4px;
-}
-
-.section{
-  overflow:hidden;
-  transition:max-height .5s cubic-bezier(.2,.8,.2,1),
-             opacity .5s cubic-bezier(.2,.8,.2,1);
-}
-
+/* =====================================================
+   Patch: Text-only Start/End button (no icon)
+   - Clean pill toggle style
+   - Uses existing .on class to indicate active stream
+===================================================== */
 #btnStartStream{
-  min-width:72px;
-  justify-content:center;
+  appearance:none;
+  -webkit-appearance:none;
+  background: transparent !important;
+  background-image: none !important;
+  border: 1.5px solid rgba(var(--accentRGB, 122,162,255), 0.95);
+  color: rgb(var(--accentRGB, 122,162,255));
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  padding: 7px 16px;
+  border-radius: 999px; /* pill */
+  min-width: 84px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .12s ease, background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+#btnStartStream:hover{
+  background-color: rgba(var(--accentRGB, 122,162,255), 0.14) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accentRGB, 122,162,255), 0.14);
+}
+
+#btnStartStream:active{
+  transform: translateY(1px);
+}
+
+#btnStartStream:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Active stream state (existing JS toggles .on) */
+#btnStartStream.on{
+  border-color: rgba(239, 68, 68, 0.95);
+  color: rgb(239, 68, 68);
+  background-color: rgba(239, 68, 68, 0.10) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+}
+
+#btnStartStream.on:hover{
+  background-color: rgba(239, 68, 68, 0.16) !important;
+}
+
+/* Remove any pseudo-element icons completely */
+#btnStartStream::before,
+#btnStartStream::after{
+  content: none !important;
+  display: none !important;
+}
+
+/* =====================================================
+   Patch: Make Stream Quality controls native <select>
+   Reason: custom pwSelect menus are DOM overlays that can be clipped/hidden
+   by stacking/overflow in some browsers/layouts.
+===================================================== */
+.streamQuality .nativeSelect{
+  display:block !important;
+  width:100%;
+}
+/* Hide custom pwSelect wrappers just for Stream Quality */
+#streamTypePicker,
+#streamResPicker,
+#streamFpsPicker,
+#streamBitratePicker{
+  display:none !important;
+}
+
+/* =====================================================
+   Patch: Stream Quality dropdowns - remove custom styling
+   - Keep them as native <select> controls with browser defaults
+===================================================== */
+.streamQuality select{
+  background: initial !important;
+  border: initial !important;
+  border-radius: initial !important;
+  padding: initial !important;
+  height: auto !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  width: 100%;
+  min-width: 0;
+}
+.streamQuality select:focus{
+  box-shadow: none !important;
+  outline: auto;
 }
