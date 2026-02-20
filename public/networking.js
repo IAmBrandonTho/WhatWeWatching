@@ -1,4 +1,3 @@
-import { requestNegotiation } from "./negotiationGuard.js";
 import { dispatch } from "./actions.js";
 
 /*
@@ -53,10 +52,3 @@ export async function startNetworking(){
     };
   });
 }
-
-document.addEventListener("ui:apply", ()=>{
-  requestNegotiation({}, async ()=>{
-    console.log("Negotiation requested (guarded)");
-    // TODO: insert real SDP renegotiation logic here
-  });
-});
