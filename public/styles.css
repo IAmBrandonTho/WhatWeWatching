@@ -1050,23 +1050,13 @@ video{
 }
 
 /* Hide UI in fullscreen except controls & chat toast */
-:fullscreen .ui,
-:fullscreen .panels,
-:fullscreen .status-pill{
-  display:none !important;
-}
 
 
-/* --- SAFE video centering (does not break layout) --- */
-.video-container {
-  display: grid;
-  place-items: center;
-}
 
-/* Ensure fullscreen hidden UI does not capture clicks */
-:fullscreen .ui,
-:fullscreen .panels,
-:fullscreen .status-pill {
+/* --- Safe fullscreen UI hiding (no click blocking) --- */
+:fullscreen .sidebar,
+:fullscreen .chat,
+:fullscreen .settings,
+:fullscreen .panels {
   display: none !important;
-  pointer-events: none !important;
 }
