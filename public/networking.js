@@ -14,6 +14,14 @@ export async function startNetworking(){
 
   pc=new RTCPeerConnection();
 
+  // Instant‑join improvement: prepare media pipeline early
+  try {
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+  } catch(e) {
+    console.warn("Transceiver prewarm failed", e);
+  }
+
   pc.addEventListener("track",(ev)=>{
     const stream=ev.streams?.[0];
     if(stream){
