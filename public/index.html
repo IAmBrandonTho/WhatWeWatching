@@ -415,15 +415,16 @@
 <summary style="cursor:pointer; color: var(--muted);">Stream Quality</summary>
 
 <div class="streamQuality">
+  <div class="mini" style="color: var(--muted); margin: 10px 0 8px">Canvas → WebRTC (Host view to Viewers)</div>
 
   <div class="sqRows">
     <label>Type</label>
     <div>
-      <select aria-hidden="true" class="nativeSelect" id="streamTypeSel" tabindex="-1">
+      <select id="streamTypeSel">
         <option value="p2p" selected>P2P</option>
         <option value="relay" disabled>Relay (future)</option>
       </select>
-      <div class="pwSelect" id="streamTypePicker">
+      <div class="pwSelect" id="streamTypePicker" style="display:none">
         <button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="streamTypeBtn" type="button">
           <span id="streamTypeBtnLabel">P2P</span>
           <span aria-hidden="true" class="pwCaret">▾</span>
@@ -434,9 +435,8 @@
 
     <label>Resolution</label>
     <div>
-      <select aria-hidden="true" class="nativeSelect" id="streamResSel" tabindex="-1">
+      <select id="streamResSel">
         <option value="auto" selected>Auto</option>
-        <option value="25">25p</option>
         <option value="50">50p</option>
         <option value="140">140p</option>
         <option value="240">240p</option>
@@ -444,7 +444,7 @@
         <option value="720">720p</option>
         <option value="1080">1080p</option>
       </select>
-      <div class="pwSelect" id="streamResPicker">
+      <div class="pwSelect" id="streamResPicker" style="display:none">
         <button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="streamResBtn" type="button">
           <span id="streamResBtnLabel">Auto</span>
           <span aria-hidden="true" class="pwCaret">▾</span>
@@ -455,15 +455,14 @@
 
     <label>FPS</label>
     <div>
-      <select aria-hidden="true" class="nativeSelect" id="streamFpsSel" tabindex="-1">
+      <select id="streamFpsSel">
         <option value="auto" selected>Auto</option>
-        <option value="1">1</option>
         <option value="10">10</option>
         <option value="15">15</option>
         <option value="24">24</option>
         <option value="30">30</option>
       </select>
-      <div class="pwSelect" id="streamFpsPicker">
+      <div class="pwSelect" id="streamFpsPicker" style="display:none">
         <button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="streamFpsBtn" type="button">
           <span id="streamFpsBtnLabel">Auto</span>
           <span aria-hidden="true" class="pwCaret">▾</span>
@@ -474,15 +473,14 @@
 
     <label>Quality</label>
     <div>
-      <select aria-hidden="true" class="nativeSelect" id="streamBitrateSel" tabindex="-1">
+      <select id="streamBitrateSel">
         <option value="auto" selected>Auto</option>
-        <option value="250000">Ultra Low (0.25 Mbps)</option>
         <option value="500000">Low (0.5 Mbps)</option>
         <option value="1500000">Balanced (1.5 Mbps)</option>
         <option value="3000000">High (3 Mbps)</option>
         <option value="6000000">Ultra (6 Mbps)</option>
       </select>
-      <div class="pwSelect" id="streamBitratePicker">
+      <div class="pwSelect" id="streamBitratePicker" style="display:none">
         <button aria-expanded="false" aria-haspopup="listbox" class="pwSelectBtn" id="streamBitrateBtn" type="button">
           <span id="streamBitrateBtnLabel">Auto</span>
           <span aria-hidden="true" class="pwCaret">▾</span>
@@ -521,7 +519,7 @@
 <input accept="audio/*" hidden="" id="audioPick" type="file"/>
 <input accept="text/vtt,.vtt,.srt,text/srt,application/x-subrip" hidden="" id="vttPick" type="file"/>
 <script crossorigin="anonymous" defer="" src="./polyfills.js" onerror="window.__pushJsErr && window.__pushJsErr('Failed to load script: '+(this.src||''))"></script>
-<script crossorigin="anonymous" defer="" src="app.js?v=20260219.2" onerror="window.__pushJsErr && window.__pushJsErr('Failed to load script: '+(this.src||''))"></script>
+<script crossorigin="anonymous" defer="" src="app.v5.js?v=20260219.2" onerror="window.__pushJsErr && window.__pushJsErr('Failed to load script: '+(this.src||''))"></script>
 <script defer src="./header-guard.js"></script>
 
 
@@ -925,74 +923,11 @@ document.addEventListener('change', (e)=>{
 })();
 </script>
 
+
 <script>
-/* Smooth <details> open/close (slide) */
-(function(){
-  const DURATION = 500;
-  function setup(details){
-    if(details.__pwSlideBound) return;
-    details.__pwSlideBound = true;
-    const summary = details.querySelector('summary');
-    if(!summary) return;
 
-    // Wrap remaining content in a container we can animate
-    let content = details.querySelector(':scope > .pwDetailsContent');
-    if(!content){
-      content = document.createElement('div');
-      content.className = 'pwDetailsContent';
-      // Move all children except summary into content
-      const kids = Array.from(details.children).filter(el => el !== summary);
-      kids.forEach(el => content.appendChild(el));
-      details.appendChild(content);
-    }
 
-    details.style.overflow = 'visible';
-    content.style.overflow = details.open ? 'visible' : 'hidden';
-    if(!details.open) { content.style.height = '0px'; }
-
-    summary.addEventListener('click', (e)=>{
-      // Let native toggle happen, but animate around it
-      if(details.__pwAnimating) { e.preventDefault(); return; }
-      const willOpen = !details.open;
-      details.__pwAnimating = true;
-
-      // Force start height
-      const startH = content.getBoundingClientRect().height;
-      if(willOpen){
-      content.style.overflow = 'hidden';
-      details.open = true;
-        content.style.height = startH + 'px';
-        // measure end
-        const endH = content.scrollHeight;
-        content.animate([{height: startH+'px'},{height:endH+'px'}],{duration:DURATION,easing:'ease'}).onfinish=()=>{
-          content.style.height = '';
-          content.style.overflow = 'visible';
-          details.__pwAnimating = false;
-        };
-      }else{
-        // Closing: clip content as height animates down (reverse of open)
-        content.style.overflow = 'hidden';
-        // Ensure we start from a fixed height so the animation actually clips.
-        content.style.height = startH + 'px';
-        const endH = 0;
-        content.animate([{height: startH+'px'},{height:endH+'px'}],{duration:DURATION,easing:'ease'}).onfinish=()=>{
-          details.open = false;
-          content.style.height = '0px';
-          content.style.overflow = 'hidden';
-          details.__pwAnimating = false;
-        };
-      }
-      e.preventDefault();
-    });
-  }
-
-  function init(){
-    document.querySelectorAll('details').forEach(setup);
-  }
-  if(document.readyState!=='loading') init();
-  else document.addEventListener('DOMContentLoaded', init);
-})();
-</script>
-
+<ul data-people-list></ul>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
