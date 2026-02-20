@@ -87,12 +87,13 @@
         0 0 18px rgba(var(--accentRGB), .45);
     }
     h1{font-size:16px;margin:0;letter-spacing:.3px}
-    .pill .badge{display:inline-flex;align-items:center;gap:4px}
-    .pill{font-size:12px;color:var(--muted);padding:4px 6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.04)}
+    .pill{font-size:12px;color:var(--muted);padding:6px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.04)}
 
-    /* Net status pill: tight width (dot + text only) */
-    #statusPill{display:inline-flex;align-items:center;justify-content:center;min-width:0;max-width:100%;width:auto;}
-    #statusPill .badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;width:auto;}
+    /* Net status pill: reserve width so Connected/Disconnected doesn't jiggle */
+    #statusPill{display:inline-flex;align-items:center;justify-content:center;min-width:132px;max-width:100%;}
+    #statusPill .badge{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;}
+    /* If the header is cramped, allow it to shrink like before */
+    body.compactStatus #statusPill{min-width:0;}
 
     main{max-width:1200px;margin:0 auto;padding:12px 16px 28px;display:grid;grid-template-columns: 1.4fr .9fr;gap:14px;}
 
@@ -141,8 +142,8 @@
     button.ok{background:rgba(110,243,154,.12);border-color:rgba(110,243,154,.4)}
     button.small{padding:6px 8px;border-radius:10px;font-size:12px}
     button.activeMode{
-      box-shadow: none;
-      border-color: rgba(var(--accentRGB),.55);
+      box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 0 18px rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.28);
     }
 
     .kv{display:grid;grid-template-columns: 130px 1fr;gap:10px;align-items:center;margin:10px 0}
@@ -984,17 +985,14 @@ body.brandLogoOnly header .brand{gap:8px;}
 #pwControls.hideVolBtns .ctl-volbtn{display:none !important;}
 #pwControls.hidePiP .ctl-pip{display:none !important;}
 #pwControls.hideSkip10 .ctl-skip10{display:none !important;}
-#btnStartStream{min-width:0;}
-#btnStartStream.on{box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 0 18px rgba(255,255,255,.22); border-color: var(--accentA); color: var(--accentA);}
+#btnStartStream{min-width:64px;}
+#btnStartStream.on{box-shadow:0 0 0 1px rgba(255,255,255,.18) inset;}
 .subsSection input[type="color"]{width:42px;height:28px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:transparent;padding:0;overflow:hidden;}
 .subsSection input[type="color"]::-webkit-color-swatch-wrapper{padding:0;}
 .subsSection input[type="color"]::-webkit-color-swatch{border:none;border-radius:9px;}
 
 
 /* --- Patch v8: Stream Quality layout + volume grouping --- */
-/* StreamQuality label style */
-.streamQuality label{font-size:12px;color:var(--muted)}
-
 .streamQuality .pwSelectBtn{min-width:0;}
 .streamQuality .sqActions{display:flex;justify-content:flex-end;}
 .streamQuality .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -1024,7 +1022,96 @@ video:fullscreen, video:-webkit-full-screen{
   .ctl-volbar{display:none !important;}
 }
 
+/* =====================================================
+   Patch: Text-only Start/End button (no icon)
+   - Clean pill toggle style
+   - Uses existing .on class to indicate active stream
+===================================================== */
+#btnStartStream{
+  appearance:none;
+  -webkit-appearance:none;
+  background: transparent !important;
+  background-image: none !important;
+  border: 1.5px solid rgba(var(--accentRGB, 122,162,255), 0.95);
+  color: rgb(var(--accentRGB, 122,162,255));
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  padding: 7px 16px;
+  border-radius: 999px; /* pill */
+  min-width: 84px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .12s ease, background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
 
-/* Patch: Start/End button sizing + centering */
-#btnStartStream{display:inline-flex;align-items:center;justify-content:center;width:54px;padding:6px 0;}
+#btnStartStream:hover{
+  background-color: rgba(var(--accentRGB, 122,162,255), 0.14) !important;
+  box-shadow: 0 0 0 3px rgba(var(--accentRGB, 122,162,255), 0.14);
+}
 
+#btnStartStream:active{
+  transform: translateY(1px);
+}
+
+#btnStartStream:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Active stream state (existing JS toggles .on) */
+#btnStartStream.on{
+  border-color: rgba(239, 68, 68, 0.95);
+  color: rgb(239, 68, 68);
+  background-color: rgba(239, 68, 68, 0.10) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+}
+
+#btnStartStream.on:hover{
+  background-color: rgba(239, 68, 68, 0.16) !important;
+}
+
+/* Remove any pseudo-element icons completely */
+#btnStartStream::before,
+#btnStartStream::after{
+  content: none !important;
+  display: none !important;
+}
+
+/* =====================================================
+   Patch: Make Stream Quality controls native <select>
+   Reason: custom pwSelect menus are DOM overlays that can be clipped/hidden
+   by stacking/overflow in some browsers/layouts.
+===================================================== */
+.streamQuality .nativeSelect{
+  display:block !important;
+  width:100%;
+}
+/* Hide custom pwSelect wrappers just for Stream Quality */
+#streamTypePicker,
+#streamResPicker,
+#streamFpsPicker,
+#streamBitratePicker{
+  display:none !important;
+}
+
+/* =====================================================
+   Patch: Stream Quality dropdowns - remove custom styling
+   - Keep them as native <select> controls with browser defaults
+===================================================== */
+.streamQuality select{
+  background: initial !important;
+  border: initial !important;
+  border-radius: initial !important;
+  padding: initial !important;
+  height: auto !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  width: 100%;
+  min-width: 0;
+}
+.streamQuality select:focus{
+  box-shadow: none !important;
+  outline: auto;
+}
