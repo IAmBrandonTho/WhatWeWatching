@@ -415,6 +415,7 @@
 <summary style="cursor:pointer; color: var(--muted);">Stream Quality</summary>
 
 <div class="streamQuality">
+  <div class="mini" style="color: var(--muted); margin: 10px 0 8px">Canvas → WebRTC (Host view to Viewers)</div>
 
   <div class="sqRows">
     <label>Type</label>
@@ -925,10 +926,15 @@ document.addEventListener('change', (e)=>{
 })();
 </script>
 
+
+<script>
+
+
+
 <script>
 /* Smooth <details> open/close (slide) */
 (function(){
-  const DURATION = 500;
+  const DURATION = 180;
   function setup(details){
     if(details.__pwSlideBound) return;
     details.__pwSlideBound = true;
@@ -946,9 +952,8 @@ document.addEventListener('change', (e)=>{
       details.appendChild(content);
     }
 
-    details.style.overflow = 'visible';
-    content.style.overflow = details.open ? 'visible' : 'hidden';
-    if(!details.open) { content.style.height = '0px'; }
+    details.style.overflow = 'hidden';
+    if(!details.open) content.style.height = '0px';
 
     summary.addEventListener('click', (e)=>{
       // Let native toggle happen, but animate around it
@@ -959,26 +964,19 @@ document.addEventListener('change', (e)=>{
       // Force start height
       const startH = content.getBoundingClientRect().height;
       if(willOpen){
-      content.style.overflow = 'hidden';
-      details.open = true;
+        details.open = true;
         content.style.height = startH + 'px';
         // measure end
         const endH = content.scrollHeight;
         content.animate([{height: startH+'px'},{height:endH+'px'}],{duration:DURATION,easing:'ease'}).onfinish=()=>{
           content.style.height = '';
-          content.style.overflow = 'visible';
           details.__pwAnimating = false;
         };
       }else{
-        // Closing: clip content as height animates down (reverse of open)
-        content.style.overflow = 'hidden';
-        // Ensure we start from a fixed height so the animation actually clips.
-        content.style.height = startH + 'px';
         const endH = 0;
         content.animate([{height: startH+'px'},{height:endH+'px'}],{duration:DURATION,easing:'ease'}).onfinish=()=>{
           details.open = false;
           content.style.height = '0px';
-          content.style.overflow = 'hidden';
           details.__pwAnimating = false;
         };
       }
@@ -994,6 +992,5 @@ document.addEventListener('change', (e)=>{
 })();
 </script>
 
-  <script type="module" src="./app.js"></script>
 </body>
 </html>
