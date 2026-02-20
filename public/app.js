@@ -1,2 +1,7 @@
 import { startNetworking } from "./networking.js";
-startNetworking();
+import { dispatch } from "./actions.js";
+
+window.addEventListener("DOMContentLoaded", () => {
+  dispatch({ type: "DISCONNECTED" });
+  startNetworking();
+});

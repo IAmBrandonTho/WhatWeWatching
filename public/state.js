@@ -2,7 +2,13 @@ export const AppState = {
   role: "viewer",
   connection: "disconnected",
   streaming: false,
-  video: { paused: true, hasStream: false, stream: null },
+  video: {
+    hasStream: false,
+    paused: true
+  },
   peers: [],
-  ui: { peopleOpen: false, qualityOpen: false }
+  ui: {
+    peopleOpen: false,
+    qualityOpen: false
+  }
 };
