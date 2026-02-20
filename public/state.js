@@ -9,8 +9,5 @@ export const AppState = {
     duration:0,
     paused:true,
     receivedAt:0
-  },
-  ui:{
-    qualityDraft:{} // local editor buffer
   }
 };
