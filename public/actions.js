@@ -9,7 +9,3 @@ export function dispatch(action){
     requestAnimationFrame(()=>updateTimelineTick(AppState));
   }
 }
-
-export function setStreamQuality(id){
-  dispatch({ type:"SET_STREAM_QUALITY", id });
-}

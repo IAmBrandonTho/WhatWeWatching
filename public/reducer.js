@@ -26,10 +26,6 @@ export function reducer(state, action){
       state.video.stream=null;
       return;
 
-    case "SET_STREAM_QUALITY":
-      state.stream.quality = action.id;
-      return;
-
     case "TIMELINE_UPDATE":
       state.timeline={
         hostTime:action.t,

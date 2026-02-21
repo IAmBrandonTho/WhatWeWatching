@@ -52,27 +52,3 @@ export async function startNetworking(){
     };
   });
 }
-
-// Bitrate observer (host‑local)
-let lastQuality=null;
-
-export function applyQuality(state){
-  if(!pc) return;
-  const sender = pc.getSenders().find(s=>s.track && s.track.kind==="video");
-  if(!sender) return;
-
-  const opt = state.stream.qualityOptions.find(o=>o.id===state.stream.quality);
-  if(!opt) return;
-
-  if(lastQuality === opt.id) return;
-  lastQuality = opt.id;
-
-  try{
-    const params = sender.getParameters();
-    if(!params.encodings) params.encodings=[{}];
-    params.encodings[0].maxBitrate = opt.bitrate;
-    sender.setParameters(params);
-  }catch(e){
-    console.warn("Bitrate apply failed", e);
-  }
-}

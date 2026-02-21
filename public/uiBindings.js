@@ -32,18 +32,6 @@ export function initUIBindings() {
       return;
     }
 
-    
-    const opt = e.target.closest(".pwSelectOpt");
-    if(opt){
-      const value = opt.dataset.value;
-      import("./actions.js").then(m=>m.setStreamQuality(value));
-      if(openDropdown){
-        openDropdown.classList.remove("open");
-        openDropdown=null;
-      }
-      return;
-    }
-
     if (openDropdown && !e.target.closest(".pwSelect")) {
       openDropdown.classList.remove("open");
       openDropdown = null;
