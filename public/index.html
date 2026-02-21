@@ -3,7 +3,17 @@
 <html data-theme="mono" lang="en">
 <head>
 <meta charset="utf-8"/>
-
+<script>
+(()=>{
+  try{
+    const p = JSON.parse(localStorage.getItem('peerwatch_prefs')||'{}');
+    const t = (p && p.theme) ? String(p.theme) : 'mono';
+    document.documentElement.dataset.theme = t || 'mono';
+  }catch(e){
+    document.documentElement.dataset.theme = 'mono';
+  }
+})();
+</script>
 
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
 <meta content="wss://whatwewatching-signal.lilbrandon2008.workers.dev" name="signal-url"/>
@@ -500,6 +510,7 @@
 
 
 
+  <!-- App bootstrap (debug only active with ?debug=1) -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
