@@ -11,3 +11,6 @@
 
 /*.worker.js
   Cross-Origin-Resource-Policy: same-origin
+
+/index.html
+  Cache-Control: no-cache
