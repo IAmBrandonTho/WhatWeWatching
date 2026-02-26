@@ -1115,20 +1115,3 @@ video:fullscreen, video:-webkit-full-screen{
   box-shadow: none !important;
   outline: auto;
 }
-
-
-/* === Patch: Section transitions === */
-.sectionContent{
-  transition:max-height .5s ease, opacity .5s ease;
-}
-
-/* === Patch: Idle player disables controls === */
-.player.idle .controls{
-  pointer-events:none;
-  opacity:.5;
-}
-
-/* === Patch: Black idle background === */
-video{
-  background:#000;
-}
