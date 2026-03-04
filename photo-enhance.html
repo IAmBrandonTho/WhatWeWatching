@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Professional Photo Enhancer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-segmentation@1.0.4/dist/body-segmentation.js" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0d10;
+      --surface: #17171d;
+      --card:    #1e1e26;
+      --border:  #2a2a38;
+      --accent:  #7c6ef7;
+      --accent2: #b39eff;
+      --text:    #eaeaf5;
+      --muted:   #8888a8;
+      --green:   #2ecc71;
+      --r: 14px;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    body { display: flex; flex-direction: column; align-items: center; }
+
+    /* ── Header ── */
+    header {
+      width: 100%;
+      padding: 18px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; flex-shrink: 0;
+    }
+
+    header h1 { font-size: 17px; font-weight: 600; letter-spacing: -.3px; }
+
+    header .tagline {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Main layout ── */
+    main {
+      width: 100%;
+      max-width: 1080px;
+      padding: 36px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Upload zone ── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--r);
+      padding: 56px 40px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--surface);
+      transition: border-color .18s, background .18s;
+    }
+
+    #drop-zone:hover, #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+    }
+
+    #drop-zone .icon { font-size: 44px; margin-bottom: 14px; }
+    #drop-zone h2   { font-size: 19px; font-weight: 600; margin-bottom: 8px; }
+    #drop-zone p    { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+    #file-input { display: none; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 18px;
+      border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:hover  { opacity: .85; }
+    .btn:active { transform: scale(.97); }
+
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-ghost    { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .btn-download { background: var(--green); color: #0a2a1a; font-weight: 700; font-size: 14px; padding: 11px 22px; }
+
+    /* ── Status bar ── */
+    #status-bar {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 18px 22px;
+      align-items: center;
+      gap: 14px;
+    }
+    #status-bar.show { display: flex; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #status-msg { font-size: 13px; color: var(--muted); flex: 1; }
+
+    .prog-track {
+      width: 160px; height: 4px;
+      background: var(--border); border-radius: 2px; overflow: hidden;
+      flex-shrink: 0;
+    }
+    .prog-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+      transition: width .3s ease;
+      width: 0;
+    }
+
+    /* ── Workspace ── */
+    #workspace { display: none; flex-direction: column; gap: 22px; }
+    #workspace.show { display: flex; }
+
+    /* ── Comparison ── */
+    .cmp-wrap {
+      position: relative;
+      border-radius: var(--r);
+      overflow: hidden;
+      user-select: none;
+      line-height: 0;
+      background: #000;
+      cursor: col-resize;
+    }
+
+    /* canvas-after = enhanced, sits below in normal flow → defines container height */
+    #cv-after {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    /* canvas-before = original, overlaid on top, clipped to LEFT half */
+    #cv-before {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      clip-path: inset(0 50% 0 0);  /* show left portion: before is on left */
+      pointer-events: none;
+    }
+
+    .cmp-divider {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 50%;
+      width: 2px;
+      background: rgba(255,255,255,0.9);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .cmp-handle {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      width: 34px; height: 34px;
+      background: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    }
+
+    .cmp-label {
+      position: absolute;
+      top: 12px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 5px;
+      background: rgba(0,0,0,.55);
+      color: #fff;
+      pointer-events: none;
+    }
+    .cmp-label-before { left: 12px; }
+    .cmp-label-after  { right: 12px; }
+
+    /* ── Settings panel ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 22px 24px;
+    }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .preset-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      transition: all .15s;
+    }
+    .preset-btn:hover { border-color: var(--accent2); color: var(--text); }
+    .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 18px;
+    }
+
+    .ctrl label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 7px;
+    }
+    .ctrl label b { color: var(--text); font-weight: 600; }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px; height: 15px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 5px rgba(0,0,0,.35);
+    }
+
+    /* ── Action row ── */
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 560px) {
+      header .tagline { display: none; }
+      .controls-grid  { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📸</div>
+  <h1>Professional Photo Enhancer</h1>
+  <span class="tagline">AI-powered · Runs locally in your browser · No upload required</span>
+</header>
+
+<main>
+
+  <!-- ── Upload ── -->
+  <div id="drop-zone">
+    <div class="icon">🖼️</div>
+    <h2>Drop your photo here</h2>
+    <p>JPG, PNG or WebP · Processed entirely on your device</p>
+    <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+      &#8593; Choose Photo
+    </button>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <!-- ── Status ── -->
+  <div id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-msg">Initializing…</span>
+    <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+  </div>
+
+  <!-- ── Workspace ── -->
+  <div id="workspace">
+
+    <div class="panel">
+      <div class="panel-title">Enhancement Preset</div>
+      <div class="presets">
+        <button class="preset-btn active" onclick="applyPreset('portrait',this)">Portrait Studio</button>
+        <button class="preset-btn"        onclick="applyPreset('editorial',this)">Editorial</button>
+        <button class="preset-btn"        onclick="applyPreset('cinematic',this)">Cinematic</button>
+        <button class="preset-btn"        onclick="applyPreset('vivid',this)">Vivid</button>
+        <button class="preset-btn"        onclick="applyPreset('natural',this)">Natural</button>
+      </div>
+
+      <div class="panel-title">Fine-Tune</div>
+      <div class="controls-grid">
+        <div class="ctrl"><label>Bokeh Blur <b id="lv-blur">22</b></label>
+          <input type="range" id="s-blur"     min="0" max="50" value="22" oninput="scheduleRender(this,'lv-blur')"></div>
+
+        <div class="ctrl"><label>Blur Feather <b id="lv-edge">8</b></label>
+          <input type="range" id="s-edge"     min="0" max="30" value="8"  oninput="scheduleRender(this,'lv-edge')"></div>
+
+        <div class="ctrl"><label>Contrast <b id="lv-con">30</b></label>
+          <input type="range" id="s-con"      min="-50" max="80" value="30" oninput="scheduleRender(this,'lv-con')"></div>
+
+        <div class="ctrl"><label>Saturation <b id="lv-sat">18</b></label>
+          <input type="range" id="s-sat"      min="-50" max="80" value="18" oninput="scheduleRender(this,'lv-sat')"></div>
+
+        <div class="ctrl"><label>Warmth <b id="lv-warm">12</b></label>
+          <input type="range" id="s-warm"     min="-40" max="40" value="12" oninput="scheduleRender(this,'lv-warm')"></div>
+
+        <div class="ctrl"><label>Sharpness <b id="lv-sharp">45</b></label>
+          <input type="range" id="s-sharp"    min="0" max="100" value="45" oninput="scheduleRender(this,'lv-sharp')"></div>
+
+        <div class="ctrl"><label>Vignette <b id="lv-vig">48</b></label>
+          <input type="range" id="s-vig"      min="0" max="100" value="48" oninput="scheduleRender(this,'lv-vig')"></div>
+
+        <div class="ctrl"><label>Exposure <b id="lv-exp">5</b></label>
+          <input type="range" id="s-exp"      min="-60" max="60" value="5" oninput="scheduleRender(this,'lv-exp')"></div>
+      </div>
+    </div>
+
+    <p style="font-size:13px; color:var(--muted); margin-top:-6px">
+      Drag the slider to compare ← before / after →
+    </p>
+
+    <div class="cmp-wrap" id="cmp"
+         onmousedown="startDrag(event)" ontouchstart="startDrag(event)">
+      <!-- Base layer: AFTER (enhanced) — defines container height -->
+      <canvas id="cv-after"></canvas>
+      <!-- Overlay: BEFORE (original) — clipped to left of divider -->
+      <canvas id="cv-before"></canvas>
+      <!-- Divider -->
+      <div class="cmp-divider" id="divider">
+        <div class="cmp-handle">&#8596;</div>
+      </div>
+      <span class="cmp-label cmp-label-before">BEFORE</span>
+      <span class="cmp-label cmp-label-after">AFTER</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-download" onclick="downloadResult()">&#8659; Download Enhanced Photo</button>
+      <button class="btn btn-ghost"    onclick="resetTool()">&#8617; New Photo</button>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════════════ */
+let srcImage      = null;   // the original Image object
+let personMask    = null;   // Float32Array (0=bg, 1=person), or null = use fallback
+let segmenter     = null;
+let renderPending = false;
+
+const PRESETS = {
+  portrait:  { blur:22, edge:8,  con:30, sat:18, warm:12, sharp:45, vig:48, exp:5  },
+  editorial: { blur:18, edge:12, con:42, sat:5,  warm:0,  sharp:55, vig:58, exp:0  },
+  cinematic: { blur:28, edge:6,  con:50, sat:-5, warm:22, sharp:30, vig:72, exp:-5 },
+  vivid:     { blur:20, edge:8,  con:20, sat:45, warm:8,  sharp:45, vig:35, exp:8  },
+  natural:   { blur:14, edge:16, con:12, sat:8,  warm:5,  sharp:22, vig:20, exp:3  },
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   UPLOAD
+═══════════════════════════════════════════════════════════════════ */
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',      e => { e.preventDefault(); dropZone.classList.remove('drag-over'); ingestFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change',   () => ingestFile(fileInput.files[0]));
+
+function ingestFile(file) {
+  if (!file?.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => { srcImage = img; runPipeline(); };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN PIPELINE
+═══════════════════════════════════════════════════════════════════ */
+async function runPipeline() {
+  showStatus('Loading AI segmentation model…', 10);
+  dropZone.style.display = 'none';
+  document.getElementById('status-bar').classList.add('show');
+  document.getElementById('workspace').classList.remove('show');
+
+  try {
+    await ensureSegmenter();
+    showStatus('Segmenting person from background…', 40);
+    await segmentImage();
+    showStatus('Applying professional enhancements…', 75);
+  } catch (err) {
+    console.warn('Segmentation failed, using soft-focus fallback:', err);
+    personMask = null;
+  }
+
+  prepareComparison();
+  await renderEnhanced();
+  showStatus('Done', 100);
+
+  setTimeout(() => {
+    document.getElementById('status-bar').classList.remove('show');
+    document.getElementById('workspace').classList.add('show');
+  }, 350);
+}
+
+function showStatus(msg, pct) {
+  document.getElementById('status-msg').textContent = msg;
+  document.getElementById('prog-fill').style.width  = pct + '%';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEGMENTATION
+═══════════════════════════════════════════════════════════════════ */
+async function ensureSegmenter() {
+  if (segmenter) return;
+  segmenter = await bodySegmentation.createSegmenter(
+    bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation,
+    {
+      runtime: 'mediapipe',
+      modelType: 'general',
+      solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747',
+    }
+  );
+}
+
+async function segmentImage() {
+  const W = srcImage.width, H = srcImage.height;
+  const MAX = 800;
+  const scale = Math.min(1, MAX / Math.max(W, H));
+  const sw = Math.round(W * scale), sh = Math.round(H * scale);
+
+  const tmp = offscreen(sw, sh);
+  tmp.ctx.drawImage(srcImage, 0, 0, sw, sh);
+
+  const segs = await segmenter.segmentPeople(tmp.canvas, {
+    multiSegmentation: false,
+    segmentBodyParts:  false,
+  });
+  if (!segs?.length) throw new Error('no segmentation result');
+
+  const rawMask = await bodySegmentation.toBinaryMask(
+    segs,
+    { r:255, g:255, b:255, a:255 },
+    { r:0,   g:0,   b:0,   a:255 },
+    false, 0.4
+  );
+
+  // Scale mask back up to original resolution
+  const maskSmall = offscreen(sw, sh);
+  maskSmall.ctx.putImageData(rawMask, 0, 0);
+
+  const maskFull = offscreen(W, H);
+  maskFull.ctx.drawImage(maskSmall.canvas, 0, 0, W, H);
+
+  const pixels = maskFull.ctx.getImageData(0, 0, W, H).data;
+  personMask   = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) personMask[i] = pixels[i * 4] / 255;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COMPARISON SETUP
+═══════════════════════════════════════════════════════════════════ */
+function prepareComparison() {
+  const W = srcImage.width, H = srcImage.height;
+  const cvBefore = document.getElementById('cv-before');
+  const cvAfter  = document.getElementById('cv-after');
+
+  cvBefore.width = cvAfter.width  = W;
+  cvBefore.height= cvAfter.height = H;
+
+  // Draw the original into the "before" canvas
+  cvBefore.getContext('2d').drawImage(srcImage, 0, 0);
+
+  setDivider(50); // start balanced
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RENDER PIPELINE
+═══════════════════════════════════════════════════════════════════ */
+async function renderEnhanced() {
+  const W = srcImage.width, H = srcImage.height;
+  const cfg = readSettings();
+
+  // ── Step 1: Blurred background ──────────────────────────────────
+  const bgOff = offscreen(W, H);
+  if (cfg.blur > 0) {
+    bgOff.ctx.filter = `blur(${cfg.blur}px)`;
+    // draw with slight margin so edge pixels are fully blurred
+    bgOff.ctx.drawImage(srcImage,
+      -cfg.blur * 2, -cfg.blur * 2,
+       W + cfg.blur * 4, H + cfg.blur * 4);
+    bgOff.ctx.filter = 'none';
+  } else {
+    bgOff.ctx.drawImage(srcImage, 0, 0);
+  }
+
+  // ── Step 2: Sharp subject mask ───────────────────────────────────
+  const maskOff = buildMask(W, H, cfg.edge);
+
+  // ── Step 3: Composite — blurred bg + sharp fg ────────────────────
+  const compOff = offscreen(W, H);
+  compOff.ctx.drawImage(bgOff.canvas, 0, 0);             // blurred bg
+
+  if (cfg.blur > 0) {
+    // Draw original image, then clip to person mask using destination-in
+    const fgOff = offscreen(W, H);
+    fgOff.ctx.drawImage(srcImage, 0, 0);
+    fgOff.ctx.globalCompositeOperation = 'destination-in';
+    fgOff.ctx.drawImage(maskOff.canvas, 0, 0);
+
+    compOff.ctx.drawImage(fgOff.canvas, 0, 0);
+  }
+
+  // ── Step 4: Sharpen subject ──────────────────────────────────────
+  if (cfg.sharp > 0) {
+    sharpenCanvas(compOff.canvas, cfg.sharp / 100, maskOff);
+  }
+
+  // ── Step 5: Color grade ──────────────────────────────────────────
+  colorGrade(compOff.canvas, cfg);
+
+  // ── Step 6: Vignette ─────────────────────────────────────────────
+  if (cfg.vig > 0) applyVignette(compOff.canvas, cfg.vig / 100);
+
+  // ── Step 7: Copy to display ──────────────────────────────────────
+  const cvAfter = document.getElementById('cv-after');
+  cvAfter.getContext('2d').drawImage(compOff.canvas, 0, 0);
+
+  // Sync cv-before overlay size to match cv-after displayed size
+  syncOverlaySize();
+}
+
+function syncOverlaySize() {
+  const cvA = document.getElementById('cv-after');
+  const cvB = document.getElementById('cv-before');
+  cvB.style.width  = cvA.offsetWidth  + 'px';
+  cvB.style.height = cvA.offsetHeight + 'px';
+}
+
+window.addEventListener('resize', syncOverlaySize);
+
+/* ═══════════════════════════════════════════════════════════════════
+   MASK BUILDER
+═══════════════════════════════════════════════════════════════════ */
+function buildMask(W, H, feather) {
+  const off = offscreen(W, H);
+
+  if (personMask) {
+    // Build from ML segmentation
+    const id = off.ctx.createImageData(W, H);
+    const d  = id.data;
+    for (let i = 0; i < W * H; i++) {
+      const v = Math.round(personMask[i] * 255);
+      d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      d[i*4+3] = v;
+    }
+    off.ctx.putImageData(id, 0, 0);
+
+    if (feather > 0) {
+      const feathOff = offscreen(W, H);
+      feathOff.ctx.filter = `blur(${feather}px)`;
+      feathOff.ctx.drawImage(off.canvas, 0, 0);
+      return feathOff;
+    }
+    return off;
+  }
+
+  // Fallback: large vertical ellipse (full-body portrait assumption)
+  const cx = W * 0.5, cy = H * 0.47;
+  const rx = W * 0.42, ry = H * 0.50;
+  const softness = Math.max(W, H) * 0.18;
+
+  const grad = off.ctx.createRadialGradient(cx, cy, Math.min(rx,ry)*0.3, cx, cy, Math.max(rx,ry)*1.05);
+  grad.addColorStop(0,    'rgba(255,255,255,1)');
+  grad.addColorStop(0.60, 'rgba(255,255,255,1)');
+  grad.addColorStop(1,    'rgba(255,255,255,0)');
+
+  off.ctx.save();
+  off.ctx.scale(1, H/W);
+  off.ctx.beginPath();
+  off.ctx.arc(cx, cy * (W/H), Math.max(rx,ry)*1.1, 0, Math.PI*2);
+  off.ctx.restore();
+
+  off.ctx.fillStyle = grad;
+  off.ctx.fillRect(0, 0, W, H);
+
+  if (feather > 0) {
+    const fOff = offscreen(W, H);
+    fOff.ctx.filter = `blur(${feather + softness*0.2}px)`;
+    fOff.ctx.drawImage(off.canvas, 0, 0);
+    return fOff;
+  }
+  return off;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SHARPENING (Unsharp Mask)
+═══════════════════════════════════════════════════════════════════ */
+function sharpenCanvas(canvas, amount, maskOff) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+
+  // Blurred version for USM
+  const blurOff = offscreen(W, H);
+  blurOff.ctx.filter = 'blur(1.2px)';
+  blurOff.ctx.drawImage(canvas, 0, 0);
+
+  const orig = ctx.getImageData(0, 0, W, H);
+  const blur = blurOff.ctx.getImageData(0, 0, W, H);
+  const mask = maskOff.ctx.getImageData(0, 0, W, H);
+
+  const out = new Uint8ClampedArray(orig.data.length);
+  for (let i = 0; i < orig.data.length; i += 4) {
+    const mw = mask.data[i] / 255;          // person weight
+    const str = amount * mw * 1.6;
+    for (let c = 0; c < 3; c++) {
+      const d = orig.data[i+c] - blur.data[i+c];
+      out[i+c] = clamp(orig.data[i+c] + str * d);
+    }
+    out[i+3] = orig.data[i+3];
+  }
+  ctx.putImageData(new ImageData(out, W, H), 0, 0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COLOR GRADE
+═══════════════════════════════════════════════════════════════════ */
+function colorGrade(canvas, cfg) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const id   = ctx.getImageData(0, 0, W, H);
+  const data  = id.data;
+
+  // Precompute R/G/B LUTs (excludes saturation, which is per-pixel)
+  const rLUT = new Uint8Array(256);
+  const gLUT = new Uint8Array(256);
+  const bLUT = new Uint8Array(256);
+
+  for (let v = 0; v < 256; v++) {
+    let r = v, g = v, b = v;
+
+    // Exposure
+    if (cfg.exp !== 0) {
+      const f = Math.pow(2, cfg.exp / 45);
+      r = clamp(r * f); g = clamp(g * f); b = clamp(b * f);
+    }
+
+    // S-curve contrast — lifts shadows, adds midtone pop, rolls highlights
+    r = sCurve(r, cfg.con / 100);
+    g = sCurve(g, cfg.con / 100);
+    b = sCurve(b, cfg.con / 100);
+
+    // Warmth — shift colour temperature
+    if (cfg.warm !== 0) {
+      const x = v / 255;
+      const strength = Math.abs(cfg.warm) / 40;
+      const hiBlend  = x * x * strength;          // more effect in highlights
+      const allBlend = x * strength * 0.4;        // mild effect everywhere
+      if (cfg.warm > 0) {
+        r = clamp(r + (hiBlend * 18 + allBlend * 5));
+        g = clamp(g + allBlend * 3);
+        b = clamp(b - (hiBlend * 14 + allBlend * 4));
+      } else {
+        r = clamp(r - (hiBlend * 12 + allBlend * 4));
+        g = clamp(g + allBlend * 2);
+        b = clamp(b + (hiBlend * 14 + allBlend * 4));
+      }
+    }
+
+    rLUT[v] = clamp(r);
+    gLUT[v] = clamp(g);
+    bLUT[v] = clamp(b);
+  }
+
+  const satFactor = 1 + cfg.sat / 80;
+
+  for (let i = 0; i < data.length; i += 4) {
+    let r = rLUT[data[i]];
+    let g = gLUT[data[i+1]];
+    let b = bLUT[data[i+2]];
+
+    // Per-pixel saturation
+    if (cfg.sat !== 0) {
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      r = clamp(lum + (r - lum) * satFactor);
+      g = clamp(lum + (g - lum) * satFactor);
+      b = clamp(lum + (b - lum) * satFactor);
+    }
+
+    data[i] = r; data[i+1] = g; data[i+2] = b;
+  }
+
+  ctx.putImageData(id, 0, 0);
+}
+
+function sCurve(v, strength) {
+  if (strength === 0) return v;
+  const x = v / 255;
+  // Classic S-curve: boost midtones, lift shadows slightly, ease highlights
+  const curve = x < 0.5
+    ? 2 * x * x
+    : 1 - Math.pow(-2*x + 2, 2) / 2;
+  const shadowLift = 0.035 * Math.max(0, strength);
+  const y = shadowLift + (1 - shadowLift) * (x + strength * (curve - x));
+  return clamp(y * 255);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   VIGNETTE
+═══════════════════════════════════════════════════════════════════ */
+function applyVignette(canvas, strength) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const cx = W/2, cy = H/2;
+  const innerR = Math.min(W,H) * 0.35;
+  const outerR = Math.max(W,H) * 0.80;
+
+  const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, `rgba(0,0,0,${(strength * 0.72).toFixed(3)})`);
+
+  const prev = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = prev;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COMPARISON SLIDER
+═══════════════════════════════════════════════════════════════════ */
+let dragging = false;
+
+function setDivider(pct) {
+  const p   = Math.max(0, Math.min(100, pct));
+  const right = 100 - p;
+  // cv-before (original) clips from left=0 to right=p,
+  // so it shows the left `p`% of the original → BEFORE on left
+  document.getElementById('cv-before').style.clipPath = `inset(0 ${right}% 0 0)`;
+  document.getElementById('divider').style.left = p + '%';
+}
+
+function startDrag(e) {
+  dragging = true;
+  moveDivider(e);
+  document.addEventListener('mousemove', moveDivider);
+  document.addEventListener('mouseup',   stopDrag);
+  document.addEventListener('touchmove', moveDivider, { passive: false });
+  document.addEventListener('touchend',  stopDrag);
+}
+
+function moveDivider(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  const rect = document.getElementById('cmp').getBoundingClientRect();
+  const cx   = e.touches ? e.touches[0].clientX : e.clientX;
+  setDivider((cx - rect.left) / rect.width * 100);
+}
+
+function stopDrag() {
+  dragging = false;
+  document.removeEventListener('mousemove', moveDivider);
+  document.removeEventListener('mouseup',   stopDrag);
+  document.removeEventListener('touchmove', moveDivider);
+  document.removeEventListener('touchend',  stopDrag);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SETTINGS
+═══════════════════════════════════════════════════════════════════ */
+function readSettings() {
+  const n = id => parseInt(document.getElementById(id).value);
+  return {
+    blur:  n('s-blur'),
+    edge:  n('s-edge'),
+    con:   n('s-con'),
+    sat:   n('s-sat'),
+    warm:  n('s-warm'),
+    sharp: n('s-sharp'),
+    vig:   n('s-vig'),
+    exp:   n('s-exp'),
+  };
+}
+
+function scheduleRender(input, labelId) {
+  document.getElementById(labelId).textContent = input.value;
+  if (!renderPending) {
+    renderPending = true;
+    requestAnimationFrame(async () => {
+      renderPending = false;
+      await renderEnhanced();
+    });
+  }
+}
+
+function applyPreset(name, btn) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const p = PRESETS[name];
+  const pairs = [
+    ['s-blur','lv-blur',p.blur], ['s-edge','lv-edge',p.edge],
+    ['s-con', 'lv-con', p.con],  ['s-sat', 'lv-sat', p.sat],
+    ['s-warm','lv-warm',p.warm], ['s-sharp','lv-sharp',p.sharp],
+    ['s-vig', 'lv-vig', p.vig],  ['s-exp', 'lv-exp', p.exp],
+  ];
+  pairs.forEach(([slId, lblId, val]) => {
+    document.getElementById(slId).value       = val;
+    document.getElementById(lblId).textContent = val;
+  });
+  if (!renderPending) {
+    renderPending = true;
+    requestAnimationFrame(async () => { renderPending = false; await renderEnhanced(); });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DOWNLOAD
+═══════════════════════════════════════════════════════════════════ */
+function downloadResult() {
+  document.getElementById('cv-after').toBlob(blob => {
+    const a = document.createElement('a');
+    a.download = 'professional-photo.jpg';
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/jpeg', 0.95);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESET
+═══════════════════════════════════════════════════════════════════ */
+function resetTool() {
+  srcImage = null; personMask = null;
+  fileInput.value = '';
+  document.getElementById('workspace').classList.remove('show');
+  dropZone.style.display = '';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════════════════ */
+const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+
+function offscreen(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return { canvas: c, ctx: c.getContext('2d') };
+}
+</script>
+</body>
+</html>
